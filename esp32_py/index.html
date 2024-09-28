@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Single Key Computer</title>
+</head>
+<body>
+  <h1>Single Key Computer</h1>
+  <p>Hello, world!</p>
+</body>
+<script>
+const ws = new WebSocket("/ws");
+
+ws.onopen = function() {
+  vbuf = new Array(64);
+
+  interval = setInterval(function() {
+    for (let i=0; i<vbuf.length; i+=1) vbuf[i] = Math.random() > 0.5 ? 32 : 0;
+    ws.send(Uint8Array.from(['M'.charCodeAt(0), ...vbuf]));
+  }, 1000);
+  
+  ws.onclose = function() {
+    clearInterval(interval);
+  };
+};
+
+ws.onmessage = async function(e) {
+  const msg = await e.data.text();
+  
+  if (msg[0] === 'b') {
+    document.body.style.backgroundColor = msg[1] === '0' ? "#F00" : null;
+  }
+};
+
+</script>
+</html>

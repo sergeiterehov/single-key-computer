@@ -14,7 +14,7 @@
 
 `'C' + 64 bytes` - each byte is pixels color
 
-Byte format: `RBGGBRGB` - bites
+Byte format: `RGBGBRGB` - bites
 
 ### Set True Color (24 bit) Display State
 
@@ -24,8 +24,8 @@ Byte format: `RBGGBRGB` - bites
 
 ### Button State
 
-`'b1'` - button released
-`'b0'` - button pressed
+`'b\x01'` - button released
+`'b\x00'` - button pressed
 
 ### Custom Ping
 

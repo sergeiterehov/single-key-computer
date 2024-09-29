@@ -78,7 +78,7 @@ async def subscribe_button(writer):
 
         if btn_state != prev_btn_state:
             prev_btn_state = btn_state
-            await ws_send(writer, b"b1" if btn_state == 1 else b"b0")
+            await ws_send(writer, b"b\x01" if btn_state == 1 else b"b\x00")
 
         await asyncio.sleep(0.01)
 

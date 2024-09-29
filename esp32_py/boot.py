@@ -1,3 +1,5 @@
+print("Starting Single Key Computer...")
+
 try:
     import usocket as socket
 except:
@@ -22,22 +24,31 @@ import usocket as socket
 import uhashlib
 import ubinascii
 
-ssid = "SingleKeyComputer"
-password = "SuperHardPassword123"
+print("Init pins")
 
 pin_led = machine.Pin(16)
 btn = machine.Pin(39, machine.Pin.IN, machine.Pin.PULL_UP)
 src_btn = machine.Pin(37, machine.Pin.IN, machine.Pin.PULL_DOWN)
 
+print("Init display")
+
 num_leds = 64
 np = neopixel.NeoPixel(pin_led, num_leds)
+
+print("Init WiFi")
+
+ssid = "SingleKeyComputer"
+password = "SuperHardPassword123"
 
 ap = network.WLAN(network.AP_IF)
 ap.active(True)
 ap.config(essid=ssid, password=password, authmode=network.AUTH_WPA_WPA2_PSK)
 
-print("Connection successful")
-print(ap.ifconfig())
+while ap.active() == False:
+    pass
+
+print("WiFI: {}, Password: {}".format(ssid, password))
+print("AP ifconfig:", ap.ifconfig())
 
 
 async def anim_display_power_on():
@@ -91,7 +102,7 @@ async def ws_handshake(writer, headers):
 
 async def ws_send(writer, payload):
     length = len(payload)
-    assert length <= 125, "Payload too large"
+    assert length <= 125, "Short payload expected"
 
     writer.write(bytes((0b10000010, length)))
     writer.write(payload)
@@ -104,13 +115,13 @@ async def ws_begin_protocol(reader, writer, on_message):
         header = await reader.read(2)
         assert header, "Break connection"
         FIN = bool(header[0] & 0x80)  # bit 0
-        assert FIN == 1, "We only support unfragmented messages"
+        assert FIN == 1, "FIN flag expected"
         opcode = header[0] & 0xF  # bits 4-7
-        assert opcode == 1 or opcode == 2, "We only support data messages"
+        assert opcode == 1 or opcode == 2, "Raw or text data expected"
         masked = bool(header[1] & 0x80)  # bit 8
-        assert masked, "The client must mask all frames"
+        assert masked, "Mask flag expected"
         payload_size = header[1] & 0x7F  # bits 9-15
-        assert payload_size <= 125, "We only support small messages"
+        assert payload_size <= 125, "Short payload expected"
         masking_key = await reader.read(4)
         payload = bytearray(await reader.read(payload_size))
         for i in range(payload_size):
@@ -140,8 +151,6 @@ async def read_headers(reader):
 
 
 async def handle_ws_message(writer, payload):
-    print("Msg:", len(payload))
-
     if payload.startswith(b"B"):
         for i in range(num_leds / 8):
             b = payload[1 + i]

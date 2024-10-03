@@ -1,6 +1,6 @@
 # Single Key Computer
 
-![alt text](hardware/assembled.jpg)
+![alt text](hardware/assembled.png)
 
 ## Components
 

@@ -9,9 +9,9 @@ export const enum EToken {
   Name,
   RegInt,
   KeywordSet,
-  // TODO: ADD
-  // TODO: CMP
-  // TODO: JL
+  KeywordAdd,
+  KeywordCmp,
+  KeywordJl,
   DirectiveName,
   DirectiveHere,
 }
@@ -24,6 +24,9 @@ const TokensDefinition: [EToken, string][] = [
   [EToken.NumberHex, "0x[0-9a-fA-F]+"],
   [EToken.NumberDec, "[0-9]+"],
   [EToken.KeywordSet, "set"],
+  [EToken.KeywordAdd, "add"],
+  [EToken.KeywordCmp, "cmp"],
+  [EToken.KeywordJl, "jl"],
   [EToken.RegInt, "i(0|[1-9][0-9]*)"],
   [EToken.Name, "[a-zA-Z_]+[a-zA-Z_0-9]*"],
 ];
@@ -95,6 +98,9 @@ export class Tokenizer {
 
 export enum ENode {
   OpSet,
+  OpAdd,
+  OpCmp,
+  OpJl,
   ConstantNumber,
   Register,
   Name,
@@ -103,17 +109,25 @@ export enum ENode {
 }
 
 type NodeOf<N extends ENode, O extends object> = { eNode: N; $map: Mapping } & O;
+type NodeTargetSourceOp<N extends ENode> = NodeOf<
+  N,
+  { target: RegisterNode | NameNode; source: NumberNode | RegisterNode | NameNode }
+>;
+type NodeJumpOp<N extends ENode> = NodeOf<N, { offset: NameNode }>;
 
 type NumberNode = NodeOf<ENode.ConstantNumber, { value: number }>;
 type NameNode = NodeOf<ENode.Name, { value: string }>;
 type RegisterNode = NodeOf<ENode.Register, { type: "i"; index: number }>;
-type OpSetNode = NodeOf<ENode.OpSet, { target: RegisterNode | NameNode; source: NumberNode | RegisterNode | NameNode }>;
+type OpSetNode = NodeTargetSourceOp<ENode.OpSet>;
+type OpAddNode = NodeTargetSourceOp<ENode.OpAdd>;
+type OpCmpNode = NodeTargetSourceOp<ENode.OpCmp>;
+type OpJlNode = NodeJumpOp<ENode.OpJl>;
 type DefineNameNode = NodeOf<ENode.DefineName, { name: string; origin: RegisterNode }>;
 type DefineLocationNode = NodeOf<ENode.DefineLocation, { name: string }>;
 
-export type Node = OpSetNode | NumberNode | RegisterNode | DefineNameNode | NameNode | DefineLocationNode;
+type NodeRoot = DefineNameNode | DefineLocationNode | OpSetNode | OpAddNode | OpCmpNode | OpJlNode;
 
-type NodeRoot = OpSetNode | DefineNameNode | DefineLocationNode;
+export type Node = NodeRoot | NumberNode | RegisterNode | NameNode;
 
 export class Parser {
   private _at: number = 0;
@@ -196,45 +210,55 @@ export class Parser {
     return { $map, eNode: ENode.Name, value: token.value };
   }
 
-  private _parseOpSet(): OpSetNode {
-    const $map = this._beginMap();
-
-    this._eat(EToken.KeywordSet);
-
-    let target: OpSetNode["target"];
-
-    switch (this._getToken().eToken) {
-      case EToken.RegInt:
-        target = this._parseRegister();
-        break;
-      case EToken.Name:
-        target = this._parseName();
-        break;
-      default:
-        throw new Error(this._explain("UNEXPECTED_TARGET"));
-    }
-
-    let source: OpSetNode["source"];
-
+  private _parseSource() {
     switch (this._getToken().eToken) {
       case EToken.NumberBin:
       case EToken.NumberDec:
       case EToken.NumberHex:
-        source = this._parseNumber();
-        break;
+        return this._parseNumber();
       case EToken.RegInt:
-        source = this._parseRegister();
-        break;
+        return this._parseRegister();
       case EToken.Name:
-        source = this._parseName();
-        break;
+        return this._parseName();
       default:
         throw new Error(this._explain("UNEXPECTED_SOURCE"));
     }
+  }
+
+  private _parseTarget() {
+    switch (this._getToken().eToken) {
+      case EToken.RegInt:
+        return this._parseRegister();
+      case EToken.Name:
+        return this._parseName();
+      default:
+        throw new Error(this._explain("UNEXPECTED_TARGET"));
+    }
+  }
+
+  private _parseTargetSourceOperation<N extends ENode>(eNode: N): NodeTargetSourceOp<N> {
+    const $map = this._beginMap();
+
+    this._eat();
+
+    const target: OpSetNode["target"] = this._parseTarget();
+    const source: OpSetNode["source"] = this._parseSource();
 
     this._endMap($map);
 
-    return { $map, eNode: ENode.OpSet, target, source };
+    return { $map, eNode, target, source };
+  }
+
+  private _parseJumpOperation<N extends ENode>(eNode: N): NodeJumpOp<N> {
+    const $map = this._beginMap();
+
+    this._eat();
+
+    const offset = this._parseName();
+
+    this._endMap($map);
+
+    return { $map, eNode, offset };
   }
 
   private _parseNameDefinition(): DefineNameNode {
@@ -269,7 +293,16 @@ export class Parser {
     while (!this._eof) {
       switch (this._getToken().eToken) {
         case EToken.KeywordSet:
-          nodes.push(this._parseOpSet());
+          nodes.push(this._parseTargetSourceOperation(ENode.OpSet));
+          break;
+        case EToken.KeywordAdd:
+          nodes.push(this._parseTargetSourceOperation(ENode.OpAdd));
+          break;
+        case EToken.KeywordCmp:
+          nodes.push(this._parseTargetSourceOperation(ENode.OpCmp));
+          break;
+        case EToken.KeywordJl:
+          nodes.push(this._parseJumpOperation(ENode.OpJl));
           break;
         case EToken.DirectiveName:
           nodes.push(this._parseNameDefinition());
@@ -300,6 +333,11 @@ export class Parser {
 const OpCodes = {
   Set_IReg_IReg: (targetIndex: number, sourceIndex: number) => [0x01, targetIndex & 0xff, sourceIndex & 0xff],
   Set_IReg_Number: (targetIndex: number, number: number) => [0x02, targetIndex & 0xff, number & 0xffffffff],
+  Add_IReg_IReg: (targetIndex: number, sourceIndex: number) => [0x03, targetIndex & 0xff, sourceIndex & 0xff],
+  Add_IReg_Number: (targetIndex: number, number: number) => [0x04, targetIndex & 0xff, number & 0xffffffff],
+  Cmp_IReg_IReg: (targetIndex: number, sourceIndex: number) => [0x05, targetIndex & 0xff, sourceIndex & 0xff],
+  Cmp_IReg_Number: (targetIndex: number, number: number) => [0x06, targetIndex & 0xff, number & 0xffffffff],
+  Jl_Number: (offset: number) => [0x07, offset & 0xffffffff],
 };
 
 export class Assembler {
@@ -332,6 +370,21 @@ export class Assembler {
     const ops: number[] = [];
     const locationsMap = new Map<string, number>();
 
+    const processParticipant = (node: Node) => {
+      switch (node.eNode) {
+        case ENode.ConstantNumber:
+        case ENode.Register:
+          return node;
+        case ENode.Name:
+          const definition = this._findNameDefinition(node.value);
+
+          if (definition) return definition.origin;
+          break;
+      }
+
+      throw new Error(this._explain("UNEXPECTED_PARTICIPANT", node));
+    };
+
     nodes_loop: for (const node of this._nodes) {
       switch (node.eNode) {
         default:
@@ -345,41 +398,59 @@ export class Assembler {
           break;
 
         case ENode.OpSet:
-          let target: RegisterNode | undefined;
+        case ENode.OpAdd:
+        case ENode.OpCmp:
+          const target = processParticipant(node.target);
 
-          switch (node.target.eNode) {
-            case ENode.Register:
-              target = node.target;
+          if (target.eNode === ENode.ConstantNumber) {
+            throw new Error(this._explain("UNEXPECTED_TARGET", node));
+          }
+
+          const source = processParticipant(node.source);
+
+          switch (node.eNode) {
+            case ENode.OpSet:
+              switch (source.eNode) {
+                case ENode.Register:
+                  ops.push(...OpCodes.Set_IReg_IReg(target.index, source.index));
+                  break;
+                case ENode.ConstantNumber:
+                  ops.push(...OpCodes.Set_IReg_Number(target.index, source.value));
+                  break;
+              }
               break;
-            case ENode.Name:
-              target = this._findNameDefinition(node.target.value)?.origin;
+            case ENode.OpAdd:
+              switch (source.eNode) {
+                case ENode.Register:
+                  ops.push(...OpCodes.Add_IReg_IReg(target.index, source.index));
+                  break;
+                case ENode.ConstantNumber:
+                  ops.push(...OpCodes.Add_IReg_Number(target.index, source.value));
+                  break;
+              }
+              break;
+            case ENode.OpCmp:
+              switch (source.eNode) {
+                case ENode.Register:
+                  ops.push(...OpCodes.Cmp_IReg_IReg(target.index, source.index));
+                  break;
+                case ENode.ConstantNumber:
+                  ops.push(...OpCodes.Cmp_IReg_Number(target.index, source.value));
+                  break;
+              }
               break;
           }
 
-          if (!target) throw new Error(this._explain("UNEXPECTED_TARGET", node));
+          break;
 
-          let source: RegisterNode | NumberNode | undefined;
+        case ENode.OpJl:
+          const location = locationsMap.get(node.offset.value);
 
-          switch (node.source.eNode) {
-            case ENode.ConstantNumber:
-            case ENode.Register:
-              source = node.source;
-              break;
-            case ENode.Name:
-              source = this._findNameDefinition(node.source.value)?.origin;
-              break;
-          }
+          if (location === undefined) throw new Error(this._explain("UNDEFINED_LOCATION", node.offset));
 
-          if (!source) throw new Error(this._explain("UNEXPECTED_SOURCE", node));
+          const offset = ops.length - location;
 
-          switch (source.eNode) {
-            case ENode.Register:
-              ops.push(...OpCodes.Set_IReg_IReg(target.index, source.index));
-              break;
-            case ENode.ConstantNumber:
-              ops.push(...OpCodes.Set_IReg_Number(target.index, source.value));
-              break;
-          }
+          ops.push(...OpCodes.Jl_Number(offset));
           break;
       }
     }

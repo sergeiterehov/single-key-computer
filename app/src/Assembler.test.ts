@@ -169,9 +169,26 @@ describe("Compiler", () => {
     test("set [reg] [reg]", () => {
       expect(compile("set i1 i2")).toEqual(Uint8Array.from([0x01, 0x01, 0x02]));
     });
-
     test("set [reg] [number]", () => {
       expect(compile("set i1 0xAB")).toEqual(Uint8Array.from([0x02, 0x01, 0xab]));
+    });
+
+    test("add [reg] [reg]", () => {
+      expect(compile("add i1 i2")).toEqual(Uint8Array.from([0x03, 0x01, 0x02]));
+    });
+    test("add [reg] [number]", () => {
+      expect(compile("add i1 0xAB")).toEqual(Uint8Array.from([0x04, 0x01, 0xab]));
+    });
+
+    test("cmp [reg] [reg]", () => {
+      expect(compile("cmp i1 i2")).toEqual(Uint8Array.from([0x05, 0x01, 0x02]));
+    });
+    test("cmp [reg] [number]", () => {
+      expect(compile("cmp i1 0xAB")).toEqual(Uint8Array.from([0x6, 0x01, 0xab]));
+    });
+
+    test("jl label", () => {
+      expect(compile("#here label jl label")).toEqual(Uint8Array.from([0x07, 0x00]));
     });
   });
 
@@ -197,6 +214,25 @@ describe("Compiler", () => {
       jl for_y
     `;
 
-    expect(() => compile(source)).not.toThrow();
+    expect(compile(source)).toEqual(
+      Uint8Array.from([
+        // set y 0
+        0x02, 0x02, 0x00,
+        // set x 0
+        0x02, 0x01, 0x00,
+        // add x 1
+        0x04, 0x01, 0x01,
+        // cmp x 8
+        0x06, 0x01, 0x08,
+        // jl for_x
+        0x07, 0x06,
+        // add y 1
+        0x04, 0x02, 0x01,
+        // cmp y 8
+        0x06, 0x02, 0x08,
+        // jl for_y
+        0x07, 0x11,
+      ])
+    );
   });
 });

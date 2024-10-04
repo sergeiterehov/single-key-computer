@@ -2,6 +2,7 @@ import vm
 import asyncio
 import math
 import struct
+from test_program import program
 
 video_offset = 0x10000
 noise_offset = 0x50000
@@ -12,21 +13,8 @@ video = vm.VMem((1 + 64) * 4)
 noise = vm.VNoise()
 bus.connect(mem, 0, mem.size - 1)
 bus.connect(video, video_offset, video_offset + video.size - 1)
-bus.connect(noise, noise_offset, noise_offset)
+bus.connect(noise, noise_offset, noise_offset + 3)
 proc = vm.VProc(bus)
-
-# fmt: off
-program = bytearray(
-    [
-        # push 0x01
-        0x02, 0x00, 0x00, 0x00, 0x01,
-        # push 0x10004
-        0x02, 0x00, 0x01, 0x00, 0x04,
-        # write
-        0x08,
-    ]
-)
-# fmt: on
 
 for i in range(math.ceil(len(program) / 4)):
     word = bytearray(4)
@@ -38,16 +26,27 @@ for i in range(math.ceil(len(program) / 4)):
 async def monitor():
     while not proc.halt:
         proc.clk()
-        print(
-            "{}: IP={} SP={} CMP={} REGs={}".format(
-                proc.cycles,
-                proc.ip,
-                proc.sp,
-                1 if proc.test > 0 else -1 if proc.test < 0 else 0,
-                [struct.unpack(">i", proc.reg[i * 4 : i * 4 + 4])[0] for i in range(6)],
+
+        if proc.debug:
+            proc.debug = False
+
+            print(
+                "{}: IP={} SP={} REGs={} STK={}".format(
+                    proc.cycles,
+                    proc.ip,
+                    proc.sp,
+                    [
+                        struct.unpack(">i", proc.reg[i * 4 : i * 4 + 4])[0]
+                        for i in range(6)
+                    ],
+                    [
+                        struct.unpack(">i", proc.stack[i : i + 4])[0]
+                        for i in range(proc.sp - 4, -1, -4)
+                    ],
+                )
             )
-        )
-        await asyncio.sleep(0.01)
+
+        await asyncio.sleep(0.001)
 
     print("Halt")
 

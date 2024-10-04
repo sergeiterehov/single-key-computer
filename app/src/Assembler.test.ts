@@ -87,11 +87,22 @@ describe("Compiler", () => {
     expect(
       compile(`
         #name t i1
-        #name s i2
         push s
         pop t
+        #name s i2
       `)
     ).toEqual(Uint8Array.from([0x01, 0x02, 0x03, 0x01]));
+  });
+
+  test("Location definition", () => {
+    expect(
+      compile(`
+        #here start
+        jmp start
+        jmp end
+        #here end
+      `)
+    ).toEqual(Uint8Array.from([0x09, 0x00, 0x00, 0x09, 0x00, 0x03]));
   });
 
   describe("Operations", () => {
@@ -116,8 +127,14 @@ describe("Compiler", () => {
     test("write", () => {
       expect(compile("write")).toEqual(Uint8Array.from([0x08]));
     });
+    test("jmp [offset]", () => {
+      expect(compile("#here loop jmp loop")).toEqual(Uint8Array.from([0x09, 0x00, 0x00]));
+    });
     test("jl [offset]", () => {
       expect(compile("#here loop jl loop")).toEqual(Uint8Array.from([0x06, 0x00, 0x00]));
+    });
+    test("debug", () => {
+      expect(compile("debug")).toEqual(Uint8Array.from([0x0a]));
     });
   });
 

@@ -63,10 +63,8 @@ class VNoise:
         pass
 
     def read(self, addr):
-        rnd = random.getrandbits(32)
-        return bytearray(
-            [rnd & 0xFF, (rnd >> 8) & 0xFF, (rnd >> 16) & 0xFF, (rnd >> 24) & 0xFF]
-        )
+        rnd = random.getrandbits(32 - addr * 8)
+        return _encode_int(rnd)
 
 
 class VProc:
@@ -76,9 +74,9 @@ class VProc:
         self.cycles = 0
 
         self.halt = False
+        self.debug = False
         self.ip = 0
         self.sp = 0
-        self.test = 0
 
         self.stack = bytearray(256 * 4)
         self.reg = bytearray(4 * 32)
@@ -86,9 +84,9 @@ class VProc:
     def reset(self):
         self.cycles = 0
         self.halt = False
+        self.debug = False
         self.ip = 0
         self.sp = 0
-        self.test = 0
 
         for i in range(len(self.reg)):
             self.reg[i] = 0
@@ -188,6 +186,16 @@ class VProc:
             data = self.stack[self.sp : self.sp + 4]
 
             self.bus.write(_decode_int(addr), data)
+
+            self.ip += 1
+        elif op == 0x09:
+            """Jmp_Offset"""
+            offset = buf[1:3]
+
+            self.ip += _decode_offset(offset)
+        elif op == 0x0A:
+            """Debug"""
+            self.debug = True
 
             self.ip += 1
         else:

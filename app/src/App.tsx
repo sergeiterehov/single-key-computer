@@ -32,7 +32,7 @@ export const App = () => {
             while (map[0] && map[0].offset === i) {
               const { at, length } = map.shift()!.node.$map;
 
-              preview.push(`\n# ${program.substring(at, at + length)}\n`);
+              preview.push(`\n# ${i}: ${program.substring(at, at + length)}\n`);
             }
 
             preview.push(`0x${bin[i].toString(16)}, `);
@@ -56,7 +56,7 @@ export const App = () => {
       <div>{connected ? "Connected!" : "Connecting..."}</div>
       <div style={{ display: "flex", flexGrow: 1, overflow: "hidden", gap: 20 }}>
         <textarea cols={40} value={program} onChange={(e) => setProgram(e.currentTarget.value)}></textarea>
-        <pre style={{ flexGrow: 1, overflowY: "auto" }}>{out}</pre>
+        <textarea readOnly style={{ flexGrow: 1, overflowY: "auto" }} value={out}></textarea>
       </div>
     </main>
   );

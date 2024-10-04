@@ -1,0 +1,36 @@
+#name x i1
+#name y i2
+#name pixel i3
+#name color i4
+
+push 0 pop y
+#here for_y
+
+push 0 pop x
+#here for_x
+
+// random color
+push 0x50003 read debug
+// if rnd() < 128 ? black : while
+push 128 jl black
+// then
+push 0
+jmp endif
+// else
+#here black
+push 255
+#here endif
+// endif
+
+// address
+push y push 8 mul push x add push 4 mul
+push 0x10004 add
+
+// write [color] [address]
+write
+
+push x push 1 add pop x
+push x push 8 jl for_x
+
+push y push 1 add pop y
+push y push 8 jl for_y

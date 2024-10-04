@@ -12,9 +12,11 @@ export const enum EToken {
   KeywordPop,
   KeywordAdd,
   KeywordMul,
+  KeywordJmp,
   KeywordJl,
   KeywordRead,
   KeywordWrite,
+  KeywordDebug,
   DirectiveName,
   DirectiveHere,
 }
@@ -30,9 +32,11 @@ const TokensDefinition: [EToken, RegExp][] = [
   [EToken.KeywordPop, /pop/],
   [EToken.KeywordAdd, /add/],
   [EToken.KeywordMul, /mul/],
+  [EToken.KeywordJmp, /jmp/],
   [EToken.KeywordJl, /jl/],
   [EToken.KeywordRead, /read/],
   [EToken.KeywordWrite, /write/],
+  [EToken.KeywordDebug, /debug/],
   [EToken.RegInt, /i(0|[1-9][0-9]*)/],
   [EToken.Name, /[a-zA-Z_]+[a-zA-Z_0-9]*/],
 ];
@@ -122,8 +126,8 @@ type RegisterNode = NodeOf<ENode.Register, { type: "i"; index: number }>;
 
 type OpPushNode = NodeOf<ENode.OpPush, { source: NumberNode | RegisterNode | NameNode }>;
 type OpPopNode = NodeOf<ENode.OpPop, { target: RegisterNode | NameNode }>;
-type OpOnStackNode = NodeOf<ENode.OpOnStack, { op: "+" | "*" | "R" | "W" }>;
-type OpJumpNode = NodeOf<ENode.OpJump, { cond: "<"; offset: NameNode }>;
+type OpOnStackNode = NodeOf<ENode.OpOnStack, { op: "+" | "*" | "R" | "W" | "DEBUG" }>;
+type OpJumpNode = NodeOf<ENode.OpJump, { cond: "*" | "<"; offset: NameNode }>;
 
 type DefineNameNode = NodeOf<ENode.DefineName, { name: string; origin: RegisterNode }>;
 type DefineLocationNode = NodeOf<ENode.DefineLocation, { name: string }>;
@@ -328,6 +332,9 @@ export class Parser {
         case EToken.KeywordMul:
           nodes.push(this._parseOnStackOperation("*"));
           break;
+        case EToken.KeywordJmp:
+          nodes.push(this._parseJumpOperation("*"));
+          break;
         case EToken.KeywordJl:
           nodes.push(this._parseJumpOperation("<"));
           break;
@@ -336,6 +343,9 @@ export class Parser {
           break;
         case EToken.KeywordWrite:
           nodes.push(this._parseOnStackOperation("W"));
+          break;
+        case EToken.KeywordDebug:
+          nodes.push(this._parseOnStackOperation("DEBUG"));
           break;
         case EToken.DirectiveName:
           nodes.push(this._parseNameDefinition());
@@ -378,6 +388,8 @@ const OpCodes = {
   Jl_Offset: (o: number) => [0x06, packInt16(o)].flat(),
   Read: () => [0x07].flat(),
   Write: () => [0x08].flat(),
+  Jmp_Offset: (o: number) => [0x09, packInt16(o)].flat(),
+  Debug: () => [0x0a].flat(),
 };
 
 export class Assembler {
@@ -395,21 +407,39 @@ export class Assembler {
     )}<--${this._source.substring(at + length, at + length + 30)}`}`;
   }
 
-  private _findNameDefinition(name: string): DefineNameNode | undefined {
-    for (const n of this._nodes) {
-      if (n.eNode === ENode.DefineName && n.name === name) {
-        return n;
-      }
-    }
-  }
-
   get source() {
     return this._source;
   }
 
   exec() {
     const bin: number[] = [];
-    const locationsMap = new Map<string, number>();
+    const locationsMap = new Map<string, { location: number; offsets: { rewrite: number; relative: number }[] }>();
+    const namesMap = new Map<string, DefineNameNode>();
+
+    for (const node of this._nodes) {
+      switch (node.eNode) {
+        case ENode.DefineLocation: {
+          if (locationsMap.has(node.name)) {
+            throw new Error(this._explain("LOCATION_ALREADY_DEFINED", node));
+          }
+
+          locationsMap.set(node.name, { offsets: [], location: 0 });
+          break;
+        }
+
+        case ENode.DefineName: {
+          if (namesMap.has(node.name)) {
+            throw new Error(this._explain("NAME_ALREADY_DEFINED", node));
+          }
+
+          namesMap.set(node.name, node);
+          break;
+        }
+
+        default:
+          break;
+      }
+    }
 
     this.map = [];
 
@@ -419,7 +449,7 @@ export class Assembler {
         case ENode.Register:
           return node;
         case ENode.Name:
-          const definition = this._findNameDefinition(node.value);
+          const definition = namesMap.get(node.value);
 
           if (definition) return definition.origin;
           break;
@@ -435,11 +465,16 @@ export class Assembler {
         case ENode.DefineName:
           break;
 
-        case ENode.DefineLocation:
-          locationsMap.set(node.name, bin.length);
-          break;
+        case ENode.DefineLocation: {
+          const location = locationsMap.get(node.name);
 
-        case ENode.OpPush:
+          if (location === undefined) throw new Error(this._explain("UNDEFINED_LOCATION", node));
+
+          location.location = bin.length;
+          break;
+        }
+
+        case ENode.OpPush: {
           const source = processParticipant(node.source);
 
           switch (source.eNode) {
@@ -452,8 +487,9 @@ export class Assembler {
           }
 
           break;
+        }
 
-        case ENode.OpPop:
+        case ENode.OpPop: {
           const target = processParticipant(node.target);
 
           if (target.eNode === ENode.Number) {
@@ -462,8 +498,9 @@ export class Assembler {
 
           bin.push(...OpCodes.Pop_IReg(target.index));
           break;
+        }
 
-        case ENode.OpOnStack:
+        case ENode.OpOnStack: {
           switch (node.op) {
             case "+":
               bin.push(...OpCodes.Add());
@@ -477,24 +514,32 @@ export class Assembler {
             case "W":
               bin.push(...OpCodes.Write());
               break;
-          }
-
-          break;
-
-        case ENode.OpJump:
-          const location = locationsMap.get(node.offset.value);
-
-          if (location === undefined) throw new Error(this._explain("UNDEFINED_LOCATION", node.offset));
-
-          const offset = location - bin.length;
-
-          switch (node.cond) {
-            case "<":
-              bin.push(...OpCodes.Jl_Offset(offset));
+            case "DEBUG":
+              bin.push(...OpCodes.Debug());
               break;
           }
 
           break;
+        }
+
+        case ENode.OpJump: {
+          const location = locationsMap.get(node.offset.value);
+
+          if (location === undefined) throw new Error(this._explain("UNDEFINED_LOCATION", node.offset));
+
+          switch (node.cond) {
+            case "*":
+              location.offsets.push({ relative: bin.length, rewrite: 1 });
+              bin.push(...OpCodes.Jmp_Offset(0));
+              break;
+            case "<":
+              location.offsets.push({ relative: bin.length, rewrite: 1 });
+              bin.push(...OpCodes.Jl_Offset(0));
+              break;
+          }
+
+          break;
+        }
 
         default:
           throw new Error(this._explain("UNEXPECTED_OPERATION", node));
@@ -502,6 +547,16 @@ export class Assembler {
 
       map.length = bin.length - map.offset;
       this.map.push(map);
+    }
+
+    for (const [, location] of locationsMap.entries()) {
+      for (const pointer of location.offsets) {
+        const offsetRewrite = pointer.relative + pointer.rewrite;
+        const binOffset = packInt16(location.location - pointer.relative);
+
+        bin[offsetRewrite] = binOffset[0];
+        bin[offsetRewrite + 1] = binOffset[1];
+      }
     }
 
     this.bin = Uint8Array.from(bin);

@@ -1,12 +1,10 @@
 import * as hooks from "preact/hooks";
-import { LEDs, SKCProtocol } from "./SKCProtocol";
-import { lifeContext } from "./Life";
+import { SKCProtocol } from "./SKCProtocol";
 
 class Store {
   private _subscribers: Array<() => void> = [];
 
   private _connected = false;
-  private _grid: number[][] = [];
 
   private _emit() {
     for (const s of this._subscribers) s();
@@ -25,8 +23,6 @@ class Store {
           ws.onclose = () => {
             skc.destroy();
 
-            lifeContext.onDraw = () => null;
-
             this._connected = false;
             this._emit();
 
@@ -38,29 +34,7 @@ class Store {
 
           const skc = new SKCProtocol(ws);
 
-          skc.onButtonChange = (presses) => {
-            if (!presses) return;
-
-            lifeContext.randomize();
-          };
-
-          lifeContext.onDraw = (grid) => {
-            const videoBuffer = new Array<number>(LEDs);
-            const resolution = Math.sqrt(LEDs);
-
-            for (let row = 0; row < resolution; row++) {
-              for (let col = 0; col < resolution; col++) {
-                const cell = grid[row][col];
-
-                videoBuffer[row * resolution + col] = cell ? 32 : 0;
-              }
-            }
-
-            skc.writeGrayscaleDisplay(videoBuffer);
-
-            this._grid = [...grid];
-            this._emit();
-          };
+          // TODO: program
         };
       });
 
@@ -74,10 +48,6 @@ class Store {
 
   get connected() {
     return this._connected;
-  }
-
-  get grid() {
-    return this._grid;
   }
 
   subscribe(cb: () => void) {

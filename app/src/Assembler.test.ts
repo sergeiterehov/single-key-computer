@@ -1,5 +1,4 @@
-import { Parser, EToken, Tokenizer, ENode, Node, Assembler } from "./Assembler";
-import { omitFp } from "./utils";
+import { Parser, EToken, Tokenizer, ENode, Assembler } from "./Assembler";
 
 function parse(source: string) {
   const tokenizer = new Tokenizer(source);
@@ -21,24 +20,6 @@ function compile(source: string) {
   return asm.bin;
 }
 
-function clearMapDeep(nodes: Node[]) {
-  const stack: object[] = [...nodes];
-
-  let pointer: object;
-
-  while ((pointer = stack.pop()!)) {
-    delete (pointer as any).$map;
-
-    for (const value of Object.values(pointer)) {
-      if (typeof value === "object" && !Array.isArray(value)) {
-        stack.push(value);
-      }
-    }
-  }
-
-  return nodes;
-}
-
 describe("Tokenizer", () => {
   test("Empty", () => {
     const tokenizer = new Tokenizer("").exec();
@@ -48,8 +29,14 @@ describe("Tokenizer", () => {
 
   test("Unexpected", () => {
     expect(() => {
-      new Tokenizer("set name (i0)").exec();
+      new Tokenizer("push name (i0)").exec();
     }).toThrow(/UNEXPECTED_SYMBOL/);
+  });
+
+  test("Expected", () => {
+    const tokenizer = new Tokenizer("#name #here name i1 i23 0012345 0x001AF 0b0101001").exec();
+
+    expect(tokenizer.tokens).toHaveLength(9);
   });
 
   test("Skip spaces", () => {
@@ -58,29 +45,17 @@ describe("Tokenizer", () => {
     expect(tokenizer.tokens).toHaveLength(6);
   });
 
-  test("Some operation", () => {
-    const text = `set i1 0xFF`;
-    const tokenizer = new Tokenizer(text).exec();
-
-    expect(tokenizer.tokens.map(omitFp("$map"))).toEqual([
-      { eToken: EToken.KeywordSet, value: "set" },
-      { eToken: EToken.RegInt, value: "i1" },
-      { eToken: EToken.NumberHex, value: "0xFF" },
-      { eToken: EToken.EOF, value: "" },
-    ] as typeof tokenizer.tokens);
-  });
-
   test("Mapping", () => {
-    const text = `set i1 0xFF hello_world`;
+    const text = `push i1 0xFF hello_world`;
     const tokenizer = new Tokenizer(text).exec();
 
-    expect(tokenizer.tokens).toEqual([
-      { eToken: EToken.KeywordSet, value: "set", $map: { at: 0, length: 3 } },
-      { eToken: EToken.RegInt, value: "i1", $map: { at: 4, length: 2 } },
-      { eToken: EToken.NumberHex, value: "0xFF", $map: { at: 7, length: 4 } },
-      { eToken: EToken.Name, value: "hello_world", $map: { at: 12, length: 11 } },
-      { eToken: EToken.EOF, value: "", $map: { at: 23, length: 0 } },
-    ] as typeof tokenizer.tokens);
+    expect(tokenizer.tokens.map((t) => [t.$map.at, t.$map.length])).toEqual([
+      [0, 4],
+      [5, 2],
+      [8, 4],
+      [13, 11],
+      [24, 0],
+    ]);
   });
 });
 
@@ -93,64 +68,17 @@ describe("Parser", () => {
     expect(() => parse("a b c d e")).toThrow(/OPERATION_EXPECTED/);
   });
 
-  test("Simple operation", () => {
-    expect(parse("set i0 0xFF")).toEqual([
-      {
-        $map: {
-          at: 0,
-          length: 11,
-        },
-        eNode: ENode.OpSet,
-        source: {
-          $map: {
-            at: 7,
-            length: 4,
-          },
-          eNode: ENode.ConstantNumber,
-          value: 0xff,
-        },
-        target: {
-          $map: {
-            at: 4,
-            length: 2,
-          },
-          eNode: ENode.Register,
-          index: 0,
-          type: "i",
-        },
-      },
-    ]);
+  test("Simple operation with mapping", () => {
+    expect(parse("add")).toEqual([{ $map: { at: 0, length: 3 }, eNode: ENode.OpOnStack, op: "+" }]);
   });
 
-  test("Multiple expression", () => {
+  test("Multiple root expression", () => {
     expect(
       parse(`
-        set i0 100
-        set i1 i0
+        push 100
+        pop i1
       `)
     ).toHaveLength(2);
-  });
-
-  describe("Operations", () => {
-    test("set [reg] [number]", () => {
-      expect(clearMapDeep(parse("set i0 0x123ABC"))).toEqual([
-        {
-          eNode: 0,
-          target: { eNode: ENode.Register, index: 0, type: "i" },
-          source: { eNode: ENode.ConstantNumber, value: 0x123abc },
-        },
-      ]);
-    });
-
-    test("set [reg] [reg]", () => {
-      expect(clearMapDeep(parse("set i1 i2"))).toEqual([
-        {
-          eNode: 0,
-          target: { eNode: ENode.Register, index: 1, type: "i" },
-          source: { eNode: ENode.Register, index: 2, type: "i" },
-        },
-      ]);
-    });
   });
 });
 
@@ -160,79 +88,135 @@ describe("Compiler", () => {
       compile(`
         #name t i1
         #name s i2
-        set t s
+        push s
+        pop t
       `)
-    ).toEqual(Uint8Array.from([0x01, 0x01, 0x02]));
+    ).toEqual(Uint8Array.from([0x01, 0x02, 0x03, 0x01]));
   });
 
   describe("Operations", () => {
-    test("set [reg] [reg]", () => {
-      expect(compile("set i1 i2")).toEqual(Uint8Array.from([0x01, 0x01, 0x02]));
+    test("push [reg]", () => {
+      expect(compile("push i1")).toEqual(Uint8Array.from([0x01, 0x01]));
     });
-    test("set [reg] [number]", () => {
-      expect(compile("set i1 0xAB")).toEqual(Uint8Array.from([0x02, 0x01, 0xab]));
+    test("push [int]", () => {
+      expect(compile("push 0x112233ff")).toEqual(Uint8Array.from([0x02, 0x11, 0x22, 0x33, 0xff]));
     });
-
-    test("add [reg] [reg]", () => {
-      expect(compile("add i1 i2")).toEqual(Uint8Array.from([0x03, 0x01, 0x02]));
+    test("pop [reg]", () => {
+      expect(compile("pop i1")).toEqual(Uint8Array.from([0x03, 0x01]));
     });
-    test("add [reg] [number]", () => {
-      expect(compile("add i1 0xAB")).toEqual(Uint8Array.from([0x04, 0x01, 0xab]));
+    test("add", () => {
+      expect(compile("add")).toEqual(Uint8Array.from([0x04]));
     });
-
-    test("cmp [reg] [reg]", () => {
-      expect(compile("cmp i1 i2")).toEqual(Uint8Array.from([0x05, 0x01, 0x02]));
+    test("mul", () => {
+      expect(compile("mul")).toEqual(Uint8Array.from([0x05]));
     });
-    test("cmp [reg] [number]", () => {
-      expect(compile("cmp i1 0xAB")).toEqual(Uint8Array.from([0x6, 0x01, 0xab]));
-    });
-
-    test("jl label", () => {
-      expect(compile("#here label jl label")).toEqual(Uint8Array.from([0x07, 0x00]));
+    test("jl [offset]", () => {
+      expect(compile("#here loop jl loop")).toEqual(Uint8Array.from([0x06, 0x00, 0x00]));
     });
   });
 
-  test("File 1", () => {
+  test("Map", () => {
+    const source = "push i1 push 0xff";
+    const asm = new Assembler(parse(source), source);
+
+    asm.exec();
+
+    expect(asm.bin).toEqual(
+      Uint8Array.from(
+        [
+          [0x01, 0x01],
+          [0x02, 0x00, 0x00, 0x00, 0xff],
+        ].flat()
+      )
+    );
+    expect([asm.map[0].offset, asm.map[0].length, asm.map[0].node.$map]).toEqual([0, 2, { at: 0, length: 7 }]);
+    expect([asm.map[1].offset, asm.map[1].length, asm.map[1].node.$map]).toEqual([2, 5, { at: 8, length: 9 }]);
+  });
+
+  test("Program", () => {
     const source = `
       #name x i1
       #name y i2
+      #name pixel i3
+      #name rand i4
 
-      set y 0
+      push 0 pop y
       #here for_y
 
-        set x 0
+        push 0 pop x
         #here for_x
 
-          // COMMENT
+          // Compute some math
+          push y push 8 mul push x add
+          push 0x10000 add
+          pop pixel
 
-        add x 1
-        cmp x 8
-        jl for_x
+        push x push 1 add pop x
+        push x push 8 jl for_x
 
-      add y 1
-      cmp y 8
-      jl for_y
+      push y push 1 add pop y
+      push y push 8 jl for_y
     `;
 
     expect(compile(source)).toEqual(
-      Uint8Array.from([
-        // set y 0
-        0x02, 0x02, 0x00,
-        // set x 0
-        0x02, 0x01, 0x00,
-        // add x 1
-        0x04, 0x01, 0x01,
-        // cmp x 8
-        0x06, 0x01, 0x08,
-        // jl for_x
-        0x07, 0x06,
-        // add y 1
-        0x04, 0x02, 0x01,
-        // cmp y 8
-        0x06, 0x02, 0x08,
-        // jl for_y
-        0x07, 0x11,
-      ])
+      Uint8Array.from(
+        [
+          // push 0
+          [0x02, 0x00, 0x00, 0x00, 0x00],
+          // pop i2
+          [0x03, 0x02],
+          // push 0
+          [0x02, 0x00, 0x00, 0x00, 0x00],
+          // pop i1
+          [0x03, 0x01],
+          // push i2
+          [0x01, 0x02],
+          // push 8
+          [0x02, 0x00, 0x00, 0x00, 0x08],
+          // mul
+          [0x05],
+          // push i1
+          [0x01, 0x01],
+          // add
+          [0x04],
+          // push 0x10000
+          [0x02, 0x00, 0x01, 0x00, 0x00],
+          // add
+          [0x04],
+          // pop i3
+          [0x03, 0x03],
+
+          // push i1
+          [0x01, 0x01],
+          // push 1
+          [0x02, 0x00, 0x00, 0x00, 0x01],
+          // add
+          [0x04],
+          // pop i1
+          [0x03, 0x01],
+          // push i1
+          [0x01, 0x01],
+          // push 8
+          [0x02, 0x00, 0x00, 0x00, 0x08],
+          // jl for_x
+          [0x06, 0xff, 0xdc],
+
+          // push i2
+          [0x01, 0x02],
+          // push 1
+          [0x02, 0x00, 0x00, 0x00, 0x01],
+          // add
+          [0x04],
+          // pop i2
+          [0x03, 0x02],
+          // push i2
+          [0x01, 0x02],
+          // push 8
+          [0x02, 0x00, 0x00, 0x00, 0x08],
+          // jl for_y
+          [0x06, 0xff, 0xc1],
+        ].flat()
+      )
     );
   });
 });

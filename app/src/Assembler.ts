@@ -8,9 +8,10 @@ export const enum EToken {
   NumberDec,
   Name,
   RegInt,
-  KeywordSet,
+  KeywordPush,
+  KeywordPop,
   KeywordAdd,
-  KeywordCmp,
+  KeywordMul,
   KeywordJl,
   DirectiveName,
   DirectiveHere,
@@ -23,9 +24,10 @@ const TokensDefinition: [EToken, string][] = [
   [EToken.NumberBin, "0b[01]+"],
   [EToken.NumberHex, "0x[0-9a-fA-F]+"],
   [EToken.NumberDec, "[0-9]+"],
-  [EToken.KeywordSet, "set"],
+  [EToken.KeywordPush, "push"],
+  [EToken.KeywordPop, "pop"],
   [EToken.KeywordAdd, "add"],
-  [EToken.KeywordCmp, "cmp"],
+  [EToken.KeywordMul, "mul"],
   [EToken.KeywordJl, "jl"],
   [EToken.RegInt, "i(0|[1-9][0-9]*)"],
   [EToken.Name, "[a-zA-Z_]+[a-zA-Z_0-9]*"],
@@ -97,11 +99,11 @@ export class Tokenizer {
 }
 
 export enum ENode {
-  OpSet,
-  OpAdd,
-  OpCmp,
-  OpJl,
-  ConstantNumber,
+  OpPush,
+  OpPop,
+  OpOnStack,
+  OpJump,
+  Number,
   Register,
   Name,
   DefineName,
@@ -109,23 +111,20 @@ export enum ENode {
 }
 
 type NodeOf<N extends ENode, O extends object> = { eNode: N; $map: Mapping } & O;
-type NodeTargetSourceOp<N extends ENode> = NodeOf<
-  N,
-  { target: RegisterNode | NameNode; source: NumberNode | RegisterNode | NameNode }
->;
-type NodeJumpOp<N extends ENode> = NodeOf<N, { offset: NameNode }>;
 
-type NumberNode = NodeOf<ENode.ConstantNumber, { value: number }>;
+type NumberNode = NodeOf<ENode.Number, { value: number }>;
 type NameNode = NodeOf<ENode.Name, { value: string }>;
 type RegisterNode = NodeOf<ENode.Register, { type: "i"; index: number }>;
-type OpSetNode = NodeTargetSourceOp<ENode.OpSet>;
-type OpAddNode = NodeTargetSourceOp<ENode.OpAdd>;
-type OpCmpNode = NodeTargetSourceOp<ENode.OpCmp>;
-type OpJlNode = NodeJumpOp<ENode.OpJl>;
+
+type OpPushNode = NodeOf<ENode.OpPush, { source: NumberNode | RegisterNode | NameNode }>;
+type OpPopNode = NodeOf<ENode.OpPop, { target: RegisterNode | NameNode }>;
+type OpOnStackNode = NodeOf<ENode.OpOnStack, { op: "+" | "*" }>;
+type OpJumpNode = NodeOf<ENode.OpJump, { cond: "<"; offset: NameNode }>;
+
 type DefineNameNode = NodeOf<ENode.DefineName, { name: string; origin: RegisterNode }>;
 type DefineLocationNode = NodeOf<ENode.DefineLocation, { name: string }>;
 
-type NodeRoot = DefineNameNode | DefineLocationNode | OpSetNode | OpAddNode | OpCmpNode | OpJlNode;
+type NodeRoot = DefineNameNode | DefineLocationNode | OpPushNode | OpPopNode | OpOnStackNode | OpJumpNode;
 
 export type Node = NodeRoot | NumberNode | RegisterNode | NameNode;
 
@@ -197,7 +196,7 @@ export class Parser {
 
     this._endMap($map);
 
-    return { $map, eNode: ENode.ConstantNumber, value: Number(token.value) };
+    return { $map, eNode: ENode.Number, value: Number(token.value) };
   }
 
   private _parseName(): NameNode {
@@ -236,20 +235,41 @@ export class Parser {
     }
   }
 
-  private _parseTargetSourceOperation<N extends ENode>(eNode: N): NodeTargetSourceOp<N> {
+  private _parsePushOperation(): OpPushNode {
     const $map = this._beginMap();
 
     this._eat();
 
-    const target: OpSetNode["target"] = this._parseTarget();
-    const source: OpSetNode["source"] = this._parseSource();
+    const source = this._parseSource();
 
     this._endMap($map);
 
-    return { $map, eNode, target, source };
+    return { $map, eNode: ENode.OpPush, source };
   }
 
-  private _parseJumpOperation<N extends ENode>(eNode: N): NodeJumpOp<N> {
+  private _parsePopOperation(): OpPopNode {
+    const $map = this._beginMap();
+
+    this._eat();
+
+    const target = this._parseTarget();
+
+    this._endMap($map);
+
+    return { $map, eNode: ENode.OpPop, target };
+  }
+
+  private _parseOnStackOperation(operation: OpOnStackNode["op"]): OpOnStackNode {
+    const $map = this._beginMap();
+
+    this._eat();
+
+    this._endMap($map);
+
+    return { $map, eNode: ENode.OpOnStack, op: operation };
+  }
+
+  private _parseJumpOperation(condition: OpJumpNode["cond"]): OpJumpNode {
     const $map = this._beginMap();
 
     this._eat();
@@ -258,7 +278,7 @@ export class Parser {
 
     this._endMap($map);
 
-    return { $map, eNode, offset };
+    return { $map, eNode: ENode.OpJump, cond: condition, offset };
   }
 
   private _parseNameDefinition(): DefineNameNode {
@@ -292,17 +312,20 @@ export class Parser {
 
     while (!this._eof) {
       switch (this._getToken().eToken) {
-        case EToken.KeywordSet:
-          nodes.push(this._parseTargetSourceOperation(ENode.OpSet));
+        case EToken.KeywordPush:
+          nodes.push(this._parsePushOperation());
+          break;
+        case EToken.KeywordPop:
+          nodes.push(this._parsePopOperation());
           break;
         case EToken.KeywordAdd:
-          nodes.push(this._parseTargetSourceOperation(ENode.OpAdd));
+          nodes.push(this._parseOnStackOperation("+"));
           break;
-        case EToken.KeywordCmp:
-          nodes.push(this._parseTargetSourceOperation(ENode.OpCmp));
+        case EToken.KeywordMul:
+          nodes.push(this._parseOnStackOperation("*"));
           break;
         case EToken.KeywordJl:
-          nodes.push(this._parseJumpOperation(ENode.OpJl));
+          nodes.push(this._parseJumpOperation("<"));
           break;
         case EToken.DirectiveName:
           nodes.push(this._parseNameDefinition());
@@ -330,18 +353,24 @@ export class Parser {
   }
 }
 
+const packInt8 = (n: number) => [n & 0xff];
+const packInt16 = (n: number) => [(n >> 8) & 0xff, n & 0xff];
+const packInt32 = (n: number) => [(n >> 24) & 0xff, (n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff];
+
 const OpCodes = {
-  Set_IReg_IReg: (targetIndex: number, sourceIndex: number) => [0x01, targetIndex & 0xff, sourceIndex & 0xff],
-  Set_IReg_Number: (targetIndex: number, number: number) => [0x02, targetIndex & 0xff, number & 0xffffffff],
-  Add_IReg_IReg: (targetIndex: number, sourceIndex: number) => [0x03, targetIndex & 0xff, sourceIndex & 0xff],
-  Add_IReg_Number: (targetIndex: number, number: number) => [0x04, targetIndex & 0xff, number & 0xffffffff],
-  Cmp_IReg_IReg: (targetIndex: number, sourceIndex: number) => [0x05, targetIndex & 0xff, sourceIndex & 0xff],
-  Cmp_IReg_Number: (targetIndex: number, number: number) => [0x06, targetIndex & 0xff, number & 0xffffffff],
-  Jl_Number: (offset: number) => [0x07, offset & 0xffffffff],
+  Hlt: () => [0x00].flat(),
+
+  Push_IReg: (i: number) => [0x01, packInt8(i)].flat(),
+  Push_Int: (v: number) => [0x02, packInt32(v)].flat(),
+  Pop_IReg: (i: number) => [0x03, packInt8(i)].flat(),
+  Add: () => [0x04].flat(),
+  Mul: () => [0x05].flat(),
+  Jl_Offset: (o: number) => [0x06, packInt16(o)].flat(),
 };
 
 export class Assembler {
   bin: Uint8Array = Uint8Array.from([]);
+  map: { offset: number; length: number; node: Node }[] = [];
 
   constructor(private _nodes: NodeRoot[], private _source: string) {}
 
@@ -367,12 +396,14 @@ export class Assembler {
   }
 
   exec() {
-    const ops: number[] = [];
+    const bin: number[] = [];
     const locationsMap = new Map<string, number>();
+
+    this.map = [];
 
     const processParticipant = (node: Node) => {
       switch (node.eNode) {
-        case ENode.ConstantNumber:
+        case ENode.Number:
         case ENode.Register:
           return node;
         case ENode.Name:
@@ -386,76 +417,76 @@ export class Assembler {
     };
 
     nodes_loop: for (const node of this._nodes) {
-      switch (node.eNode) {
-        default:
-          throw new Error(this._explain("UNEXPECTED_OPERATION", node));
+      const map: (typeof this.map)[0] = { node, offset: bin.length, length: 0 };
 
+      switch (node.eNode) {
         case ENode.DefineName:
           break;
 
         case ENode.DefineLocation:
-          locationsMap.set(node.name, ops.length);
+          locationsMap.set(node.name, bin.length);
           break;
 
-        case ENode.OpSet:
-        case ENode.OpAdd:
-        case ENode.OpCmp:
+        case ENode.OpPush:
+          const source = processParticipant(node.source);
+
+          switch (source.eNode) {
+            case ENode.Register:
+              bin.push(...OpCodes.Push_IReg(source.index));
+              break;
+            case ENode.Number:
+              bin.push(...OpCodes.Push_Int(source.value));
+              break;
+          }
+
+          break;
+
+        case ENode.OpPop:
           const target = processParticipant(node.target);
 
-          if (target.eNode === ENode.ConstantNumber) {
+          if (target.eNode === ENode.Number) {
             throw new Error(this._explain("UNEXPECTED_TARGET", node));
           }
 
-          const source = processParticipant(node.source);
+          bin.push(...OpCodes.Pop_IReg(target.index));
+          break;
 
-          switch (node.eNode) {
-            case ENode.OpSet:
-              switch (source.eNode) {
-                case ENode.Register:
-                  ops.push(...OpCodes.Set_IReg_IReg(target.index, source.index));
-                  break;
-                case ENode.ConstantNumber:
-                  ops.push(...OpCodes.Set_IReg_Number(target.index, source.value));
-                  break;
-              }
+        case ENode.OpOnStack:
+          switch (node.op) {
+            case "+":
+              bin.push(...OpCodes.Add());
               break;
-            case ENode.OpAdd:
-              switch (source.eNode) {
-                case ENode.Register:
-                  ops.push(...OpCodes.Add_IReg_IReg(target.index, source.index));
-                  break;
-                case ENode.ConstantNumber:
-                  ops.push(...OpCodes.Add_IReg_Number(target.index, source.value));
-                  break;
-              }
-              break;
-            case ENode.OpCmp:
-              switch (source.eNode) {
-                case ENode.Register:
-                  ops.push(...OpCodes.Cmp_IReg_IReg(target.index, source.index));
-                  break;
-                case ENode.ConstantNumber:
-                  ops.push(...OpCodes.Cmp_IReg_Number(target.index, source.value));
-                  break;
-              }
+            case "*":
+              bin.push(...OpCodes.Mul());
               break;
           }
 
           break;
 
-        case ENode.OpJl:
+        case ENode.OpJump:
           const location = locationsMap.get(node.offset.value);
 
           if (location === undefined) throw new Error(this._explain("UNDEFINED_LOCATION", node.offset));
 
-          const offset = ops.length - location;
+          const offset = location - bin.length;
 
-          ops.push(...OpCodes.Jl_Number(offset));
+          switch (node.cond) {
+            case "<":
+              bin.push(...OpCodes.Jl_Offset(offset));
+              break;
+          }
+
           break;
+
+        default:
+          throw new Error(this._explain("UNEXPECTED_OPERATION", node));
       }
+
+      map.length = bin.length - map.offset;
+      this.map.push(map);
     }
 
-    this.bin = Uint8Array.from(ops);
+    this.bin = Uint8Array.from(bin);
 
     return this;
   }

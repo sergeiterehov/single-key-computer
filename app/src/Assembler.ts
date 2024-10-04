@@ -13,24 +13,28 @@ export const enum EToken {
   KeywordAdd,
   KeywordMul,
   KeywordJl,
+  KeywordRead,
+  KeywordWrite,
   DirectiveName,
   DirectiveHere,
 }
 
-const TokensDefinition: [EToken, string][] = [
-  [EToken.Space, "\\s+|\\/\\/[^\n]*"],
-  [EToken.DirectiveName, "#name"],
-  [EToken.DirectiveHere, "#here"],
-  [EToken.NumberBin, "0b[01]+"],
-  [EToken.NumberHex, "0x[0-9a-fA-F]+"],
-  [EToken.NumberDec, "[0-9]+"],
-  [EToken.KeywordPush, "push"],
-  [EToken.KeywordPop, "pop"],
-  [EToken.KeywordAdd, "add"],
-  [EToken.KeywordMul, "mul"],
-  [EToken.KeywordJl, "jl"],
-  [EToken.RegInt, "i(0|[1-9][0-9]*)"],
-  [EToken.Name, "[a-zA-Z_]+[a-zA-Z_0-9]*"],
+const TokensDefinition: [EToken, RegExp][] = [
+  [EToken.Space, /\s+|\/\/[^\n]*/],
+  [EToken.DirectiveName, /#name/],
+  [EToken.DirectiveHere, /#here/],
+  [EToken.NumberBin, /0b[01]+/],
+  [EToken.NumberHex, /0x[0-9a-fA-F]+/],
+  [EToken.NumberDec, /[0-9]+/],
+  [EToken.KeywordPush, /push/],
+  [EToken.KeywordPop, /pop/],
+  [EToken.KeywordAdd, /add/],
+  [EToken.KeywordMul, /mul/],
+  [EToken.KeywordJl, /jl/],
+  [EToken.KeywordRead, /read/],
+  [EToken.KeywordWrite, /write/],
+  [EToken.RegInt, /i(0|[1-9][0-9]*)/],
+  [EToken.Name, /[a-zA-Z_]+[a-zA-Z_0-9]*/],
 ];
 
 type Token = { eToken: EToken; value: string; $map: Mapping };
@@ -64,8 +68,8 @@ export class Tokenizer {
 
       let token: Token | undefined;
 
-      for (const [eToken, expString] of TokensDefinition) {
-        const match = new RegExp(expString).exec(currentText);
+      for (const [eToken, exp] of TokensDefinition) {
+        const match = exp.exec(currentText);
 
         if (!match) continue;
 
@@ -118,7 +122,7 @@ type RegisterNode = NodeOf<ENode.Register, { type: "i"; index: number }>;
 
 type OpPushNode = NodeOf<ENode.OpPush, { source: NumberNode | RegisterNode | NameNode }>;
 type OpPopNode = NodeOf<ENode.OpPop, { target: RegisterNode | NameNode }>;
-type OpOnStackNode = NodeOf<ENode.OpOnStack, { op: "+" | "*" }>;
+type OpOnStackNode = NodeOf<ENode.OpOnStack, { op: "+" | "*" | "R" | "W" }>;
 type OpJumpNode = NodeOf<ENode.OpJump, { cond: "<"; offset: NameNode }>;
 
 type DefineNameNode = NodeOf<ENode.DefineName, { name: string; origin: RegisterNode }>;
@@ -327,6 +331,12 @@ export class Parser {
         case EToken.KeywordJl:
           nodes.push(this._parseJumpOperation("<"));
           break;
+        case EToken.KeywordRead:
+          nodes.push(this._parseOnStackOperation("R"));
+          break;
+        case EToken.KeywordWrite:
+          nodes.push(this._parseOnStackOperation("W"));
+          break;
         case EToken.DirectiveName:
           nodes.push(this._parseNameDefinition());
           break;
@@ -366,6 +376,8 @@ const OpCodes = {
   Add: () => [0x04].flat(),
   Mul: () => [0x05].flat(),
   Jl_Offset: (o: number) => [0x06, packInt16(o)].flat(),
+  Read: () => [0x07].flat(),
+  Write: () => [0x08].flat(),
 };
 
 export class Assembler {
@@ -458,6 +470,12 @@ export class Assembler {
               break;
             case "*":
               bin.push(...OpCodes.Mul());
+              break;
+            case "R":
+              bin.push(...OpCodes.Read());
+              break;
+            case "W":
+              bin.push(...OpCodes.Write());
               break;
           }
 

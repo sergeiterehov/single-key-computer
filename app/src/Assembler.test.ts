@@ -110,6 +110,12 @@ describe("Compiler", () => {
     test("mul", () => {
       expect(compile("mul")).toEqual(Uint8Array.from([0x05]));
     });
+    test("read", () => {
+      expect(compile("read")).toEqual(Uint8Array.from([0x07]));
+    });
+    test("write", () => {
+      expect(compile("write")).toEqual(Uint8Array.from([0x08]));
+    });
     test("jl [offset]", () => {
       expect(compile("#here loop jl loop")).toEqual(Uint8Array.from([0x06, 0x00, 0x00]));
     });

@@ -1,3 +1,5 @@
+import random
+
 try:
     import ustruct as struct
 except:
@@ -51,6 +53,20 @@ class VMem:
 
     def read(self, addr):
         return self.mem[addr : addr + 4]
+
+
+class VNoise:
+    def __init__(self):
+        pass
+
+    def write(self, addr, data):
+        pass
+
+    def read(self, addr):
+        rnd = random.getrandbits(32)
+        return bytearray(
+            [rnd & 0xFF, (rnd >> 8) & 0xFF, (rnd >> 16) & 0xFF, (rnd >> 24) & 0xFF]
+        )
 
 
 class VProc:
@@ -155,5 +171,24 @@ class VProc:
                 self.ip += _decode_offset(offset)
             else:
                 self.ip += 3
+        elif op == 0x07:
+            """Read"""
+            self.sp -= 4
+            addr = self.stack[self.sp : self.sp + 4]
+
+            self.stack[self.sp : self.sp + 4] = self.bus.read(_decode_int(addr))
+            self.sp += 4
+
+            self.ip += 1
+        elif op == 0x08:
+            """Write"""
+            self.sp -= 4
+            addr = self.stack[self.sp : self.sp + 4]
+            self.sp -= 4
+            data = self.stack[self.sp : self.sp + 4]
+
+            self.bus.write(_decode_int(addr), data)
+
+            self.ip += 1
         else:
             self.ip += 1

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "preact/hooks";
-import { useStore } from "./store";
+import { store, useStore } from "./store";
 import { Assembler, Parser, Tokenizer } from "./Assembler";
 
 export const App = () => {
@@ -7,8 +7,11 @@ export const App = () => {
 
   const [program, setProgram] = useState("");
   const [out, setOut] = useState("");
+  const [binOut, setBinOut] = useState<Uint8Array>();
 
   useEffect(() => {
+    setBinOut(undefined);
+
     try {
       const tokenizer = new Tokenizer(program);
 
@@ -25,6 +28,8 @@ export const App = () => {
           asm.exec();
 
           const { bin, map } = asm;
+
+          setBinOut(bin);
 
           let preview: string[] = [];
 
@@ -54,6 +59,11 @@ export const App = () => {
     <main style={{ display: "flex", flexDirection: "column", overflow: "hidden", height: "100vh" }}>
       <h1>Single Key Computer</h1>
       <div>{connected ? "Connected!" : "Connecting..."}</div>
+      {connected && (
+        <div>
+          <button onClick={() => binOut && store.writeRAM(binOut)}>Upload</button>
+        </div>
+      )}
       <div style={{ display: "flex", flexGrow: 1, overflow: "hidden", gap: 20 }}>
         <textarea cols={40} value={program} onChange={(e) => setProgram(e.currentTarget.value)}></textarea>
         <textarea readOnly style={{ flexGrow: 1, overflowY: "auto" }} value={out}></textarea>

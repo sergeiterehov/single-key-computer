@@ -1,9 +1,6 @@
 print("Starting Single Key Computer...")
 
-try:
-    import usocket as socket
-except:
-    import socket
+import usocket as socket
 
 import network
 
@@ -24,6 +21,9 @@ import usocket as socket
 import uhashlib
 import ubinascii
 
+import vm
+import ustruct as struct
+
 print("Init pins")
 
 pin_led = machine.Pin(16)
@@ -34,6 +34,7 @@ print("Init display")
 
 num_leds = 64
 np = neopixel.NeoPixel(pin_led, num_leds)
+np.write()
 
 print("Init WiFi")
 
@@ -179,15 +180,17 @@ async def handle_ws_message(writer, payload):
             np[i] = (r, g, b)
 
         np.write()
+    elif payload.startswith(b"u"):
+        with open("ram.bin", mode="wb") as f:
+            pass
+    elif payload.startswith(b"U"):
+        with open("ram.bin", mode="ab") as f:
+            f.write(payload[1:])
 
 
 async def handle_get_ws(reader, writer, headers):
     await ws_handshake(writer, headers)
     print("WS Connected!")
-
-    for i in range(num_leds):
-        np[i] = (0, 0, 0)
-    np.write()
 
     subscriptions = []
 
@@ -244,12 +247,97 @@ async def websocket_server():
         await asyncio.sleep(3600)
 
 
-async def main():
-    power_anim_task = asyncio.create_task(anim_display_power_on())
-    server_task = asyncio.create_task(websocket_server())
+video_offset = 0x10000
+noise_offset = 0x50000
 
-    await server_task
-    await power_anim_task
+
+class Video:
+    def __init__(self, np):
+        self.size = (1 + 64) * 4
+        self.np = np
+
+    def read(self, addr):
+        r, g, b = self.np[(addr >> 2) - 1]
+
+        return bytearray([0, r, g, b])
+
+    def write(self, addr, data):
+        self.np[(addr >> 2) - 1] = (data[1], data[2], data[3])
+        self.np.write()
+
+
+bus = vm.VBus()
+mem = vm.VMem(32 * 1000)
+video = Video(np)
+noise = vm.VNoise()
+bus.connect(mem, 0, mem.size - 1)
+bus.connect(video, video_offset, video_offset + video.size - 1)
+bus.connect(noise, noise_offset, noise_offset + 3)
+proc = vm.VProc(bus)
+
+
+async def computing():
+    try:
+        import example
+
+        mem.mem[0 : len(example.program)] = example.program
+    except:
+        with open("ram.bin", mode="rb") as f:
+            ram = f.read()
+            print("RAM:", ram)
+            mem.mem[0 : len(ram)] = ram
+
+    while not proc.halt:
+        proc.clk()
+
+        if proc.debug:
+            proc.debug = False
+
+            print(
+                "{}: IP={} SP={} REGs={} STK={}".format(
+                    proc.cycles,
+                    proc.ip,
+                    proc.sp,
+                    [
+                        struct.unpack(">i", proc.reg[i * 4 : i * 4 + 4])[0]
+                        for i in range(6)
+                    ],
+                    [
+                        struct.unpack(">i", proc.stack[i : i + 4])[0]
+                        for i in range(proc.sp - 4, -1, -4)
+                    ],
+                )
+            )
+
+        await asyncio.sleep(0)
+
+
+async def main():
+    tasks = []
+
+    if btn.value() == 0:
+        power_anim_task = asyncio.create_task(anim_display_power_on())
+        server_task = asyncio.create_task(websocket_server())
+
+        await power_anim_task
+        print("Animated!")
+
+        tasks.append(server_task)
+
+    for i in range(num_leds):
+        np[i] = (0, 0, 0)
+    np.write()
+
+    computing_task = asyncio.create_task(computing())
+
+    try:
+        await computing_task
+        print("COMPUTED!")
+    except Exception as e:
+        print("COMPUTING ERROR:", e)
+
+    for task in tasks:
+        await task
 
 
 asyncio.run(main())

@@ -6,6 +6,8 @@ class Store {
 
   private _connected = false;
 
+  private _skc?: SKCProtocol;
+
   private _emit() {
     for (const s of this._subscribers) s();
   }
@@ -23,6 +25,7 @@ class Store {
           ws.onclose = () => {
             skc.destroy();
 
+            this._skc = undefined;
             this._connected = false;
             this._emit();
 
@@ -34,7 +37,7 @@ class Store {
 
           const skc = new SKCProtocol(ws);
 
-          // TODO: program
+          this._skc = skc;
         };
       });
 
@@ -48,6 +51,14 @@ class Store {
 
   get connected() {
     return this._connected;
+  }
+
+  writeRAM(data: Uint8Array) {
+    this._skc?.eraseRAM();
+
+    for (let i = 0; i < data.length; i += 100) {
+      this._skc?.appendRAM([...data.slice(i, i + 100)]);
+    }
   }
 
   subscribe(cb: () => void) {

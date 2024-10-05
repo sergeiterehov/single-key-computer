@@ -99,4 +99,23 @@ export class SKCProtocol {
 
     this._ws.send(Uint8Array.from(bytes));
   }
+
+  eraseRAM() {
+    this._ws.send(Uint8Array.from(["u".charCodeAt(0)]));
+  }
+
+  /**
+   * @param chunk byte[]
+   */
+  appendRAM(chunk: number[]) {
+    const bytes: number[] = [];
+
+    for (const byte of chunk) {
+      bytes.push(byte);
+    }
+
+    bytes.unshift("U".charCodeAt(0));
+
+    this._ws.send(Uint8Array.from(bytes));
+  }
 }

@@ -18,7 +18,7 @@ push 0
 jmp endif
 // else
 #here black
-push 255
+push 0x00202020
 #here endif
 // endif
 

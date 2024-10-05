@@ -14,11 +14,11 @@ push 0x50003 read debug
 // if rnd() < 128 ? black : while
 push 128 jl black
 // then
-push 0
+push 0x00202020
 jmp endif
 // else
 #here black
-push 0x00202020
+push 0x0
 #here endif
 // endif
 

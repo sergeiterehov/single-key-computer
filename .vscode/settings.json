@@ -1,0 +1,17 @@
+{
+  "files.associations": {
+    "__bit_reference": "cpp",
+    "initializer_list": "cpp",
+    "string": "cpp",
+    "string_view": "cpp",
+    "arduino.h": "c",
+    "freertos.h": "c",
+    "freertosconfig.h": "c",
+    "freertosconfig_arch.h": "c",
+    "xtensa_config.h": "c",
+    "core.h": "c",
+    "hal.h": "c",
+    "xtensa-versions.h": "c",
+    "ostream": "cpp"
+  }
+}

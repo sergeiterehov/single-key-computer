@@ -36,11 +36,11 @@ async def monitor():
                     proc.ip,
                     proc.sp,
                     [
-                        struct.unpack(">i", proc.reg[i * 4 : i * 4 + 4])[0]
+                        struct.unpack("i", proc.reg[i * 4 : i * 4 + 4])[0]
                         for i in range(6)
                     ],
                     [
-                        struct.unpack(">i", proc.stack[i : i + 4])[0]
+                        struct.unpack("i", proc.stack[i : i + 4])[0]
                         for i in range(proc.sp - 4, -1, -4)
                     ],
                 )
@@ -57,7 +57,7 @@ async def display():
             for x in range(8):
                 pixel_offset = (1 + y * 8 + x) * 4
                 pixel = video.mem[pixel_offset : pixel_offset + 4]
-                print("##" if pixel[3] else "..", end="")
+                print("##" if pixel[0] else "..", end="")
             print("")
 
         await asyncio.sleep(0.5)

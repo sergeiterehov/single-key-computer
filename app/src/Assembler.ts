@@ -374,8 +374,8 @@ export class Parser {
 }
 
 const packInt8 = (n: number) => [n & 0xff];
-const packInt16 = (n: number) => [(n >> 8) & 0xff, n & 0xff];
-const packInt32 = (n: number) => [(n >> 24) & 0xff, (n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff];
+const packInt16 = (n: number) => [(n >> 8) & 0xff, n & 0xff].reverse();
+const packInt32 = (n: number) => [(n >> 24) & 0xff, (n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff].reverse();
 
 const OpCodes = {
   Hlt: () => [0x00].flat(),

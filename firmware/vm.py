@@ -7,15 +7,15 @@ except:
 
 
 def _decode_offset(offset):
-    return struct.unpack(">h", offset)[0]
+    return struct.unpack("h", offset)[0]
 
 
 def _decode_int(bytes):
-    return struct.unpack(">i", bytes)[0]
+    return struct.unpack("i", bytes)[0]
 
 
 def _encode_int(int):
-    return struct.pack(">i", int)
+    return struct.pack("i", int)
 
 
 class VBus:

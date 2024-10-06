@@ -3,23 +3,29 @@
 
 #include "vm.h"
 
+#define MEMSIZE 32000
+
 VMem::VMem() {
-  this->_mem = (uint8_t*)malloc(32000);
+  this->_mem = (uint8_t*)malloc(MEMSIZE);
 }
 
-uint32_t VMem::read(uint32_t addr) {
-  return *(uint32_t*)(this->_mem + addr);
+uint8_t VMem::read(uint32_t addr) {
+  if (addr >= MEMSIZE) return 0;
+
+  return this->_mem[addr];
 }
 
-void VMem::write(uint32_t addr, uint32_t data) {
-  *(uint32_t*)(this->_mem + addr) = data;
+void VMem::write(uint32_t addr, uint8_t data) {
+  if (addr >= MEMSIZE) return;
+
+  this->_mem[addr] = data;
 }
 
-uint32_t VNoise::read(uint32_t addr) {
-  return esp_random() >> (addr * 8);
+uint8_t VNoise::read(uint32_t addr) {
+  return esp_random();
 }
 
-void VNoise::write(uint32_t addr, uint32_t data) {}
+void VNoise::write(uint32_t addr, uint8_t data) {}
 
 void VBus::connect(uint32_t addr_from, uint32_t addr_to, VBusDevice* p_device) {
   VBusSlave* p_slave = new VBusSlave();
@@ -32,7 +38,7 @@ void VBus::connect(uint32_t addr_from, uint32_t addr_to, VBusDevice* p_device) {
   this->_connected += 1;
 }
 
-uint32_t VBus::read(uint32_t addr) {
+uint8_t VBus::read(uint32_t addr) {
   for (int i = 0; i < this->_connected; i += 1) {
     VBusSlave* p_slave = this->slaves[i];
 
@@ -44,7 +50,7 @@ uint32_t VBus::read(uint32_t addr) {
   return 0;
 }
 
-void VBus::write(uint32_t addr, uint32_t data) {
+void VBus::write(uint32_t addr, uint8_t data) {
   for (int i = 0; i < this->_connected; i += 1) {
     VBusSlave* p_slave = this->slaves[i];
 
@@ -57,17 +63,16 @@ void VBus::write(uint32_t addr, uint32_t data) {
 void VProc::clk() {
   this->cycles += 1;
 
-  uint32_t buf = this->bus->read(this->ip);
-  uint8_t* buf_bytes = (uint8_t*)(&buf);
+  uint8_t op = this->bus->read(this->ip);
 
-  uint8_t op = buf_bytes[0];
+  uint8_t u8;
+  uint16_t u16;
+  uint32_t u32a;
+  uint32_t u32b;
 
-  uint8_t arg_reg;
-  uint32_t arg_u32;
-  int16_t arg_i16;
-
-  int32_t u32a;
-  int32_t u32b;
+  uint8_t* p_u16 = (uint8_t*)(&u16);
+  uint8_t* p_u32a = (uint8_t*)(&u32a);
+  uint8_t* p_u32b = (uint8_t*)(&u32b);
 
   switch (op) {
     case 0x00:
@@ -78,93 +83,118 @@ void VProc::clk() {
       break;
     case 0x01:
       // Push_IReg
-      arg_reg = buf_bytes[1] & 0b11111;
+      u8 = this->bus->read(this->ip + 1) & 0b11111;
 
-      *(uint32_t*)(this->stack + this->sp) = this->reg[arg_reg];
+      *(uint32_t*)(this->stack + this->sp) = this->reg[u8];
       this->sp += 4;
 
       this->ip += 2;
       break;
     case 0x02:
-      // Push_Int
-      *(uint32_t*)(this->stack + this->sp) = this->bus->read(this->ip + 1);
-      this->sp += 4;
-
-      this->ip += 5;
-      break;
-    case 0x03:
       // Pop_IReg
-      arg_reg = buf_bytes[1] & 0b11111;
+      u8 = this->bus->read(this->ip + 1) & 0b11111;
 
       this->sp -= 4;
-      this->reg[arg_reg] = *(uint32_t*)(this->stack + this->sp);
+      this->reg[u8] = *(uint32_t*)(this->stack + this->sp);
 
       this->ip += 2;
       break;
+    case 0x03:
+      // Push_Size_Array
+      u8 = this->bus->read(this->ip + 1);
+
+      for (int i = 0; i < u8; i += 1) {
+        this->stack[this->sp + i] = this->bus->read(this->ip + 2 + i);
+      }
+      this->sp += u8;
+
+      this->ip += 2 + u8;
+      break;
     case 0x04:
+      // Pop_Size
+      this->sp -= this->bus->read(this->ip + 1);
+
+      this->ip += 2;
+      break;
+    case 0x10:
+      // Read
+      this->sp -= 1;
+      u8 = *(uint32_t*)(this->stack + this->sp);  // size
+
+      this->sp -= 4;
+      u32a = *(uint32_t*)(this->stack + this->sp);  // addr
+
+      for (int i = 0; i < u8; i += 1) {
+        this->stack[this->sp] = this->bus->read(u32a + i);
+        this->sp += 1;
+      }
+
+      this->ip += 1;
+      break;
+    case 0x11:
+      // Write
+      this->sp -= 1;
+      u8 = *(uint32_t*)(this->stack + this->sp);  // size
+
+      this->sp -= 4;
+      u32a = *(uint32_t*)(this->stack + this->sp);  // addr
+
+      // data
+      for (int i = 0; i < u8; i += 1) {
+        this->sp -= 1;
+        this->bus->write(u32a + i, this->stack[this->sp]);
+      }
+
+      this->ip += 1;
+      break;
+    case 0x20:
+      // Jmp_Offset
+      p_u16[0] = this->bus->read(this->ip + 1);
+      p_u16[1] = this->bus->read(this->ip + 2);
+
+      this->ip += (int16_t)(u16);
+      break;
+    case 0x21:
+      // Jl_Offset
+      p_u16[0] = this->bus->read(this->ip + 1);
+      p_u16[1] = this->bus->read(this->ip + 2);
+
+      this->sp -= 4;
+      u32b = *(uint32_t*)(this->stack + this->sp);
+      this->sp -= 4;
+      u32a = *(uint32_t*)(this->stack + this->sp);
+
+      if ((int32_t)(u32a) < (int32_t)(u32b)) {
+        this->ip += (int16_t)(u16);
+      } else {
+        this->ip += 3;
+      }
+      break;
+    case 0x30:
       // Add
       this->sp -= 4;
       u32b = *(uint32_t*)(this->stack + this->sp);
       this->sp -= 4;
       u32a = *(uint32_t*)(this->stack + this->sp);
 
-      *(uint32_t*)(this->stack + this->sp) = u32a + u32b;
+      *(uint32_t*)(this->stack + this->sp) = (int32_t)(u32a) + (int32_t)(u32b);
       this->sp += 4;
 
       this->ip += 1;
       break;
-    case 0x05:
+    case 0x31:
       // Mul
       this->sp -= 4;
       u32b = *(uint32_t*)(this->stack + this->sp);
       this->sp -= 4;
       u32a = *(uint32_t*)(this->stack + this->sp);
 
-      *(uint32_t*)(this->stack + this->sp) = u32a * u32b;
+      *(uint32_t*)(this->stack + this->sp) = (int32_t)(u32a) * (int32_t)(u32b);
       this->sp += 4;
 
       this->ip += 1;
       break;
-    case 0x06:
-      // Jl_Offset
-      this->sp -= 4;
-      u32b = *(uint32_t*)(this->stack + this->sp);
-      this->sp -= 4;
-      u32a = *(uint32_t*)(this->stack + this->sp);
-
-      if (u32a < u32b) {
-        this->ip += *(int16_t*)(buf_bytes + 1);
-      } else {
-        this->ip += 3;
-      }
-      break;
-    case 0x07:
-      // Read
-      this->sp -= 4;
-      u32a = *(uint32_t*)(this->stack + this->sp);  // addr
-
-      *(uint32_t*)(this->stack + this->sp) = this->bus->read(u32a);
-      this->sp += 4;
-
-      this->ip += 1;
-      break;
-    case 0x08:
-      // Write
-      this->sp -= 4;
-      u32a = *(uint32_t*)(this->stack + this->sp);  // addr
-
-      this->sp -= 4;
-      u32b = *(uint32_t*)(this->stack + this->sp);  // data
-
-      this->bus->write(u32a, u32b);
-
-      this->ip += 1;
-      break;
-    case 0x09:
-      // Jmp_Offset
-      this->ip += *(int16_t*)(buf_bytes + 1);
-      break;
-    case 0x0A:
+    case 0xFF:
       // Debug
       this->debug = true;
 

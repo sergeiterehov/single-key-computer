@@ -5,8 +5,8 @@
 
 class VBusDevice {
 public:
-  virtual uint32_t read(uint32_t addr) = 0;
-  virtual void write(uint32_t addr, uint32_t data) = 0;
+  virtual uint8_t read(uint32_t addr) = 0;
+  virtual void write(uint32_t addr, uint8_t data) = 0;
 };
 
 class VMem : public VBusDevice {
@@ -16,14 +16,14 @@ private:
 public:
   VMem();
 
-  uint32_t read(uint32_t addr);
-  void write(uint32_t addr, uint32_t data);
+  uint8_t read(uint32_t addr);
+  void write(uint32_t addr, uint8_t data);
 };
 
 class VNoise : public VBusDevice {
 public:
-  uint32_t read(uint32_t addr);
-  void write(uint32_t addr, uint32_t data);
+  uint8_t read(uint32_t addr);
+  void write(uint32_t addr, uint8_t data);
 };
 
 class VBusSlave {
@@ -43,8 +43,8 @@ public:
 
   void connect(uint32_t addr_from, uint32_t addr_to, VBusDevice* p_device);
 
-  uint32_t read(uint32_t addr);
-  void write(uint32_t addr, uint32_t data);
+  uint8_t read(uint32_t addr);
+  void write(uint32_t addr, uint8_t data);
 };
 
 class VProc {

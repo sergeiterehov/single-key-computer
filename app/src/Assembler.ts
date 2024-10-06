@@ -19,6 +19,9 @@ export const enum EToken {
   KeywordDebug,
   DirectiveName,
   DirectiveHere,
+  Coma,
+  SquareBracketOpen,
+  SquareBracketClose,
 }
 
 const TokensDefinition: [EToken, RegExp][] = [
@@ -39,6 +42,9 @@ const TokensDefinition: [EToken, RegExp][] = [
   [EToken.KeywordDebug, /debug/],
   [EToken.RegInt, /i(0|[1-9][0-9]*)/],
   [EToken.Name, /[a-zA-Z_]+[a-zA-Z_0-9]*/],
+  [EToken.Coma, /,/],
+  [EToken.SquareBracketOpen, /\[/],
+  [EToken.SquareBracketClose, /\]/],
 ];
 
 type Token = { eToken: EToken; value: string; $map: Mapping };
@@ -108,6 +114,7 @@ export class Tokenizer {
 
 export enum ENode {
   OpPush,
+  OpPushArray,
   OpPop,
   OpOnStack,
   OpJump,
@@ -116,6 +123,7 @@ export enum ENode {
   Name,
   DefineName,
   DefineLocation,
+  Array,
 }
 
 type NodeOf<N extends ENode, O extends object> = { eNode: N; $map: Mapping } & O;
@@ -123,9 +131,10 @@ type NodeOf<N extends ENode, O extends object> = { eNode: N; $map: Mapping } & O
 type NumberNode = NodeOf<ENode.Number, { value: number }>;
 type NameNode = NodeOf<ENode.Name, { value: string }>;
 type RegisterNode = NodeOf<ENode.Register, { type: "i"; index: number }>;
+type ArrayNode = NodeOf<ENode.Array, { values: NumberNode[] }>;
 
-type OpPushNode = NodeOf<ENode.OpPush, { source: NumberNode | RegisterNode | NameNode }>;
-type OpPopNode = NodeOf<ENode.OpPop, { target: RegisterNode | NameNode }>;
+type OpPushNode = NodeOf<ENode.OpPush, { source: NumberNode | RegisterNode | NameNode | ArrayNode }>;
+type OpPopNode = NodeOf<ENode.OpPop, { target: RegisterNode | NameNode | NumberNode }>;
 type OpOnStackNode = NodeOf<ENode.OpOnStack, { op: "+" | "*" | "R" | "W" | "DEBUG" }>;
 type OpJumpNode = NodeOf<ENode.OpJump, { cond: "*" | "<"; offset: NameNode }>;
 
@@ -134,7 +143,7 @@ type DefineLocationNode = NodeOf<ENode.DefineLocation, { name: string }>;
 
 type NodeRoot = DefineNameNode | DefineLocationNode | OpPushNode | OpPopNode | OpOnStackNode | OpJumpNode;
 
-export type Node = NodeRoot | NumberNode | RegisterNode | NameNode;
+export type Node = NodeRoot | NumberNode | RegisterNode | NameNode | ArrayNode;
 
 export class Parser {
   private _at: number = 0;
@@ -217,30 +226,26 @@ export class Parser {
     return { $map, eNode: ENode.Name, value: token.value };
   }
 
-  private _parseSource() {
-    switch (this._getToken().eToken) {
-      case EToken.NumberBin:
-      case EToken.NumberDec:
-      case EToken.NumberHex:
-        return this._parseNumber();
-      case EToken.RegInt:
-        return this._parseRegister();
-      case EToken.Name:
-        return this._parseName();
-      default:
-        throw new Error(this._explain("UNEXPECTED_SOURCE"));
-    }
-  }
+  private _parseArray(): ArrayNode {
+    const $map = this._beginMap();
 
-  private _parseTarget() {
-    switch (this._getToken().eToken) {
-      case EToken.RegInt:
-        return this._parseRegister();
-      case EToken.Name:
-        return this._parseName();
-      default:
-        throw new Error(this._explain("UNEXPECTED_TARGET"));
-    }
+    this._eat(EToken.SquareBracketOpen);
+
+    const values: NumberNode[] = [];
+
+    do {
+      values.push(this._parseNumber());
+
+      if (this._getToken().eToken === EToken.Coma) {
+        this._eat();
+      }
+    } while ([EToken.NumberBin, EToken.NumberDec, EToken.NumberHex, EToken.Name].includes(this._getToken().eToken));
+
+    this._eat(EToken.SquareBracketClose);
+
+    this._endMap($map);
+
+    return { $map, eNode: ENode.Array, values };
   }
 
   private _parsePushOperation(): OpPushNode {
@@ -248,7 +253,22 @@ export class Parser {
 
     this._eat();
 
-    const source = this._parseSource();
+    const source = (() => {
+      switch (this._getToken().eToken) {
+        case EToken.SquareBracketOpen:
+          return this._parseArray();
+        case EToken.NumberBin:
+        case EToken.NumberDec:
+        case EToken.NumberHex:
+          return this._parseNumber();
+        case EToken.RegInt:
+          return this._parseRegister();
+        case EToken.Name:
+          return this._parseName();
+        default:
+          throw new Error(this._explain("UNEXPECTED_SOURCE"));
+      }
+    })();
 
     this._endMap($map);
 
@@ -260,7 +280,20 @@ export class Parser {
 
     this._eat();
 
-    const target = this._parseTarget();
+    const target = (() => {
+      switch (this._getToken().eToken) {
+        case EToken.NumberBin:
+        case EToken.NumberDec:
+        case EToken.NumberHex:
+          return this._parseNumber();
+        case EToken.RegInt:
+          return this._parseRegister();
+        case EToken.Name:
+          return this._parseName();
+        default:
+          throw new Error(this._explain("UNEXPECTED_TARGET"));
+      }
+    })();
 
     this._endMap($map);
 
@@ -373,23 +406,41 @@ export class Parser {
   }
 }
 
-const packInt8 = (n: number) => [n & 0xff];
-const packInt16 = (n: number) => [(n >> 8) & 0xff, n & 0xff].reverse();
-const packInt32 = (n: number) => [(n >> 24) & 0xff, (n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff].reverse();
+const to8 = (n: number) => [n & 0xff];
+const to16 = (n: number) => [(n >> 8) & 0xff, n & 0xff].reverse();
+const to32 = (n: number) => [(n >> 24) & 0xff, (n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff].reverse();
 
-const OpCodes = {
-  Hlt: () => [0x00].flat(),
+class OpCoder<P extends any[]> {
+  static from<B extends (...args: any) => Array<number | number[]>>(code: number, builder: B): OpCoder<Parameters<B>>;
+  static from<P extends []>(code: number): OpCoder<[]>;
+  static from(code: number, builder = (..._: any[]): any[] => []) {
+    return new OpCoder(code, function (this: any, ...args) {
+      return builder.apply(this, args).flat();
+    });
+  }
 
-  Push_IReg: (i: number) => [0x01, packInt8(i)].flat(),
-  Push_Int: (v: number) => [0x02, packInt32(v)].flat(),
-  Pop_IReg: (i: number) => [0x03, packInt8(i)].flat(),
-  Add: () => [0x04].flat(),
-  Mul: () => [0x05].flat(),
-  Jl_Offset: (o: number) => [0x06, packInt16(o)].flat(),
-  Read: () => [0x07].flat(),
-  Write: () => [0x08].flat(),
-  Jmp_Offset: (o: number) => [0x09, packInt16(o)].flat(),
-  Debug: () => [0x0a].flat(),
+  constructor(public readonly code: number, private readonly _builder: (...args: P) => number[]) {}
+
+  build(...args: P) {
+    return [this.code, ...this._builder.apply(this, args)];
+  }
+}
+
+export const Ops = {
+  Hlt: OpCoder.from(0x00),
+
+  Push_IReg: OpCoder.from(0x01, (i: number) => [to8(i)]),
+  Pop_IReg: OpCoder.from(0x02, (i: number) => [to8(i)]),
+  Push_Size_Array: OpCoder.from(0x03, (s: number, a: number[]) => [to8(s), ...a.map(to8)]),
+  Pop_Size: OpCoder.from(0x04, (s: number) => [to8(s)]),
+  Read: OpCoder.from(0x10),
+  Write: OpCoder.from(0x11),
+  Jmp_Offset: OpCoder.from(0x20, (o: number) => [to16(o)]),
+  Jl_Offset: OpCoder.from(0x21, (o: number) => [to16(o)]),
+  Add: OpCoder.from(0x30),
+  Mul: OpCoder.from(0x31),
+
+  Debug: OpCoder.from(0xff),
 };
 
 export class Assembler {
@@ -443,19 +494,20 @@ export class Assembler {
 
     this.map = [];
 
-    const processParticipant = (node: Node) => {
+    const requireRegister = (node: Node) => {
       switch (node.eNode) {
-        case ENode.Number:
         case ENode.Register:
           return node;
         case ENode.Name:
           const definition = namesMap.get(node.value);
 
-          if (definition) return definition.origin;
+          if (definition) {
+            return definition.origin;
+          }
           break;
       }
 
-      throw new Error(this._explain("UNEXPECTED_PARTICIPANT", node));
+      throw new Error(this._explain("REGISTER_REQUIRED", node));
     };
 
     nodes_loop: for (const node of this._nodes) {
@@ -475,14 +527,20 @@ export class Assembler {
         }
 
         case ENode.OpPush: {
-          const source = processParticipant(node.source);
-
-          switch (source.eNode) {
-            case ENode.Register:
-              bin.push(...OpCodes.Push_IReg(source.index));
+          switch (node.source.eNode) {
+            default:
+              bin.push(...Ops.Push_IReg.build(requireRegister(node.source).index));
               break;
             case ENode.Number:
-              bin.push(...OpCodes.Push_Int(source.value));
+              bin.push(...Ops.Push_Size_Array.build(4, to32(node.source.value)));
+              break;
+            case ENode.Array:
+              bin.push(
+                ...Ops.Push_Size_Array.build(
+                  node.source.values.length,
+                  node.source.values.map((n) => n.value)
+                )
+              );
               break;
           }
 
@@ -490,32 +548,34 @@ export class Assembler {
         }
 
         case ENode.OpPop: {
-          const target = processParticipant(node.target);
-
-          if (target.eNode === ENode.Number) {
-            throw new Error(this._explain("UNEXPECTED_TARGET", node));
+          switch (node.target.eNode) {
+            default:
+              bin.push(...Ops.Pop_IReg.build(requireRegister(node.target).index));
+              break;
+            case ENode.Number:
+              bin.push(...Ops.Pop_Size.build(node.target.value));
+              break;
           }
 
-          bin.push(...OpCodes.Pop_IReg(target.index));
           break;
         }
 
         case ENode.OpOnStack: {
           switch (node.op) {
             case "+":
-              bin.push(...OpCodes.Add());
+              bin.push(...Ops.Add.build());
               break;
             case "*":
-              bin.push(...OpCodes.Mul());
+              bin.push(...Ops.Mul.build());
               break;
             case "R":
-              bin.push(...OpCodes.Read());
+              bin.push(...Ops.Read.build());
               break;
             case "W":
-              bin.push(...OpCodes.Write());
+              bin.push(...Ops.Write.build());
               break;
             case "DEBUG":
-              bin.push(...OpCodes.Debug());
+              bin.push(...Ops.Debug.build());
               break;
           }
 
@@ -530,11 +590,11 @@ export class Assembler {
           switch (node.cond) {
             case "*":
               location.offsets.push({ relative: bin.length, rewrite: 1 });
-              bin.push(...OpCodes.Jmp_Offset(0));
+              bin.push(...Ops.Jmp_Offset.build(0));
               break;
             case "<":
               location.offsets.push({ relative: bin.length, rewrite: 1 });
-              bin.push(...OpCodes.Jl_Offset(0));
+              bin.push(...Ops.Jl_Offset.build(0));
               break;
           }
 
@@ -552,7 +612,7 @@ export class Assembler {
     for (const [, location] of locationsMap.entries()) {
       for (const pointer of location.offsets) {
         const offsetRewrite = pointer.relative + pointer.rewrite;
-        const binOffset = packInt16(location.location - pointer.relative);
+        const binOffset = to16(location.location - pointer.relative);
 
         bin[offsetRewrite] = binOffset[0];
         bin[offsetRewrite + 1] = binOffset[1];

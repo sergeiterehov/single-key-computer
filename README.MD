@@ -11,7 +11,7 @@
 
 ## Stack
 
-- MicroPython
+- Arduino, LittleFS_esp32, Adafruit_NeoPixel
 - WiFi
-- WebSocket
-- JavaScript Web application
+- HTTP
+- PReact Web Application

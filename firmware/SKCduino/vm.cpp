@@ -60,6 +60,14 @@ void VBus::write(uint32_t addr, uint8_t data) {
   }
 }
 
+void VProc::reset() {
+  this->cycles = 0;
+  this->ip = 0;
+  this->sp = 0;
+  this->debug = false;
+  this->halt = false;
+}
+
 void VProc::clk() {
   this->cycles += 1;
 

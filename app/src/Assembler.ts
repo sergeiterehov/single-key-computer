@@ -17,6 +17,7 @@ export const enum EToken {
   KeywordRead,
   KeywordWrite,
   KeywordDebug,
+  KeywordHlt,
   DirectiveName,
   DirectiveHere,
   Coma,
@@ -40,6 +41,7 @@ const TokensDefinition: [EToken, RegExp][] = [
   [EToken.KeywordRead, /read/],
   [EToken.KeywordWrite, /write/],
   [EToken.KeywordDebug, /debug/],
+  [EToken.KeywordHlt, /hlt/],
   [EToken.RegInt, /i(0|[1-9][0-9]*)/],
   [EToken.Name, /[a-zA-Z_]+[a-zA-Z_0-9]*/],
   [EToken.Coma, /,/],
@@ -135,7 +137,7 @@ type ArrayNode = NodeOf<ENode.Array, { values: NumberNode[] }>;
 
 type OpPushNode = NodeOf<ENode.OpPush, { source: NumberNode | RegisterNode | NameNode | ArrayNode }>;
 type OpPopNode = NodeOf<ENode.OpPop, { target: RegisterNode | NameNode | NumberNode }>;
-type OpOnStackNode = NodeOf<ENode.OpOnStack, { op: "+" | "*" | "R" | "W" | "DEBUG" }>;
+type OpOnStackNode = NodeOf<ENode.OpOnStack, { op: "+" | "*" | "R" | "W" | "DEBUG" | "HALT" }>;
 type OpJumpNode = NodeOf<ENode.OpJump, { cond: "*" | "<"; offset: NameNode }>;
 
 type DefineNameNode = NodeOf<ENode.DefineName, { name: string; origin: RegisterNode }>;
@@ -380,6 +382,9 @@ export class Parser {
         case EToken.KeywordDebug:
           nodes.push(this._parseOnStackOperation("DEBUG"));
           break;
+        case EToken.KeywordHlt:
+          nodes.push(this._parseOnStackOperation("HALT"));
+          break;
         case EToken.DirectiveName:
           nodes.push(this._parseNameDefinition());
           break;
@@ -576,6 +581,9 @@ export class Assembler {
               break;
             case "DEBUG":
               bin.push(...Ops.Debug.build());
+              break;
+            case "HALT":
+              bin.push(...Ops.Hlt.build());
               break;
           }
 

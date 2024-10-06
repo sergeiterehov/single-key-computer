@@ -1,32 +1,18 @@
-# WS Protocol
+# SKC Protocols
 
-## Computer events
+## HTTP Methods (little-endian)
 
-### Set Binary Display State
+All methods use **POST**!
 
-`'B' + 8 bytes` - bites are pixels
+- `/proc/reset` body `[]`
+- `/bus/read` body `[24bit address, 8bit size]`
+- `/bus/write` body `[24bit address, ...bytes]`
+- `/rom/delete` body `[]`
+- `/rom/write` body `[...bytes]`
+- `/` body `[...bytes]` - save new index.html
 
-### Set Grayscale Display State
+## Memory mapping
 
-`'M' + 64 bytes` - bytes are pixels brightness
-
-### Set Color (256) Display State
-
-`'C' + 64 bytes` - each byte is pixels color
-
-Byte format: `RGBGBRGB` - bites
-
-### Set True Color (24 bit) Display State
-
-`'T' + 64*3 bytes` - Red, Green, Blue components for each pixel
-
-## Application events
-
-### Button State
-
-`'b\x01'` - button released
-`'b\x00'` - button pressed
-
-### Custom Ping
-
-`'^PING$'` - dummy ping frame
+- `0x00000-0x07CFF` - RAM
+- `0x50000-0x50fff` - Video (8x8 @24bit)
+- `0x51000-0x51fff` - Random generator

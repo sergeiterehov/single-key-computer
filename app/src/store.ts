@@ -1,64 +1,10 @@
-import * as hooks from "preact/hooks";
-import { SKCProtocol } from "./SKCProtocol";
+import { useLayoutEffect, useState } from "preact/hooks";
 
-class Store {
+class Observable {
   private _subscribers: Array<() => void> = [];
 
-  private _connected = false;
-
-  private _skc?: SKCProtocol;
-
-  private _emit() {
+  protected _emit() {
     for (const s of this._subscribers) s();
-  }
-
-  private async _connectionLoop() {
-    while (true) {
-      await new Promise<void>((resolve) => {
-        const ws = new WebSocket("/ws");
-
-        ws.onerror = () => {
-          resolve();
-        };
-
-        ws.onopen = () => {
-          ws.onclose = () => {
-            skc.destroy();
-
-            this._skc = undefined;
-            this._connected = false;
-            this._emit();
-
-            resolve();
-          };
-
-          this._connected = true;
-          this._emit();
-
-          const skc = new SKCProtocol(ws);
-
-          this._skc = skc;
-        };
-      });
-
-      await new Promise<void>((resolve) => setTimeout(resolve, 5000));
-    }
-  }
-
-  constructor() {
-    this._connectionLoop();
-  }
-
-  get connected() {
-    return this._connected;
-  }
-
-  writeRAM(data: Uint8Array) {
-    this._skc?.eraseRAM();
-
-    for (let i = 0; i < data.length; i += 100) {
-      this._skc?.appendRAM([...data.slice(i, i + 100)]);
-    }
   }
 
   subscribe(cb: () => void) {
@@ -70,12 +16,91 @@ class Store {
   }
 }
 
+class Store extends Observable {
+  private _noise: number = -1;
+
+  constructor() {
+    super();
+
+    this._emit();
+
+    this._pingLoop();
+  }
+
+  private async _pingLoop() {
+    try {
+      const [byte] = await this.readBus(0x51000, 1);
+
+      if (byte === undefined) return;
+
+      this._noise = byte;
+      this._emit();
+    } finally {
+      setTimeout(() => this._pingLoop(), 5000);
+    }
+  }
+
+  get noise() {
+    return this._noise;
+  }
+
+  async resetProc() {
+    const res = await fetch("/proc/reset", { method: "POST" });
+    const data = new Uint8Array(await res.arrayBuffer());
+
+    return data;
+  }
+
+  async readBus(addr: number, size: number) {
+    const res = await fetch("/bus/read", {
+      method: "POST",
+      body: new Uint8Array([addr & 0xff, (addr >> 8) & 0xff, (addr >> 16) & 0xff, size]),
+    });
+    const data = new Uint8Array(await res.arrayBuffer());
+
+    return data;
+  }
+
+  async writeBus(addr: number, bin: Uint8Array) {
+    const res = await fetch("/bus/write", {
+      method: "POST",
+      body: new Uint8Array([addr & 0xff, (addr >> 8) & 0xff, (addr >> 16) & 0xff, ...bin]),
+    });
+    const data = new Uint8Array(await res.arrayBuffer());
+
+    return data;
+  }
+
+  async deleteROM() {
+    const res = await fetch("/rom/delete", { method: "POST" });
+    const data = new Uint8Array(await res.arrayBuffer());
+
+    return data;
+  }
+
+  async writeROM(bin: Uint8Array) {
+    const res = await fetch("/rom/write", { method: "POST", body: bin });
+    const data = new Uint8Array(await res.arrayBuffer());
+
+    return data;
+  }
+
+  async writeIndexHTML(file: string) {
+    const res = await fetch("/", { method: "POST", body: file });
+    const data = new Uint8Array(await res.arrayBuffer());
+
+    return data;
+  }
+}
+
 export const store = new Store();
 
-export function useStore<T>(getter: (store: Store) => T) {
-  const [value, setValue] = hooks.useState(getter(store));
+(window as any).__store = store;
 
-  hooks.useLayoutEffect(() => store.subscribe(() => setValue(getter(store))), []);
+export function useStore<T>(getter: (store: Store) => T) {
+  const [value, setValue] = useState(getter(store));
+
+  useLayoutEffect(() => store.subscribe(() => setValue(getter(store))), []);
 
   return value;
 }

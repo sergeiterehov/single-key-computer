@@ -2,10 +2,14 @@ import { useEffect, useState } from "preact/hooks";
 import { store, useStore } from "./store";
 import { Assembler, Parser, Tokenizer } from "./Assembler";
 
-export const App = () => {
-  const connected = useStore((s) => s.connected);
+const NoiseView = () => {
+  const noise = useStore((s) => s.noise);
 
-  const [program, setProgram] = useState("");
+  return <div>Noise: {noise}</div>;
+};
+
+export const App = () => {
+  const [program, setProgram] = useState("hlt");
   const [out, setOut] = useState("");
   const [binOut, setBinOut] = useState<Uint8Array>();
 
@@ -56,14 +60,21 @@ export const App = () => {
   }, [program]);
 
   return (
-    <main style={{ display: "flex", flexDirection: "column", overflow: "hidden", height: "100vh" }}>
+    <main style={{ display: "flex", flexDirection: "column", gap: 20, overflow: "hidden", height: "100vh" }}>
       <h1>Single Key Computer</h1>
-      <div>{connected ? "Connected!" : "Connecting..."}</div>
-      {connected && (
-        <div>
-          <button onClick={() => binOut && store.writeRAM(binOut)}>Upload</button>
-        </div>
-      )}
+      <NoiseView />
+      <div style={{ display: "flex" }}>
+        <button
+          style={{ flexGrow: 1 }}
+          disabled={!binOut}
+          onClick={() => binOut && store.writeROM(binOut).catch(alert)}
+        >
+          Upload
+        </button>
+        <button disabled={!binOut} onClick={() => binOut && store.resetProc().catch(alert)}>
+          Reset Processor
+        </button>
+      </div>
       <div style={{ display: "flex", flexGrow: 1, overflow: "hidden", gap: 20 }}>
         <textarea cols={80} value={program} onChange={(e) => setProgram(e.currentTarget.value)}></textarea>
         <textarea readOnly style={{ flexGrow: 1, overflowY: "auto" }} value={out}></textarea>

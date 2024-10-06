@@ -120,6 +120,9 @@ describe("Compiler", () => {
   });
 
   describe("Operations", () => {
+    test("hlt", () => {
+      expect(compile("hlt")).toEqual(Uint8Array.from([0x00]));
+    });
     test("debug", () => {
       expect(compile("debug")).toEqual(Uint8Array.from([0xff]));
     });

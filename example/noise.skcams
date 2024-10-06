@@ -32,3 +32,5 @@ push x push 8 jl for_x
 
 push y push 1 add pop y
 push y push 8 jl for_y
+
+hlt

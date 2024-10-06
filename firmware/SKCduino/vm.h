@@ -61,6 +61,8 @@ public:
   uint8_t stack[256 * sizeof(int)];
   uint32_t reg[32];
 
+  void reset();
+
   void clk();
 };
 

@@ -452,6 +452,8 @@ export class Assembler {
   bin: Uint8Array = Uint8Array.from([]);
   map: { offset: number; length: number; node: Node }[] = [];
 
+  enableInterrupts = false;
+
   constructor(private _nodes: NodeRoot[], private _source: string) {}
 
   private _explain(key: string, node: Node) {
@@ -471,6 +473,10 @@ export class Assembler {
     const bin: number[] = [];
     const locationsMap = new Map<string, { location: number; offsets: { rewrite: number; relative: number }[] }>();
     const namesMap = new Map<string, DefineNameNode>();
+
+    if (this.enableInterrupts) {
+      bin.push(...new Array(16).fill(0));
+    }
 
     for (const node of this._nodes) {
       switch (node.eNode) {

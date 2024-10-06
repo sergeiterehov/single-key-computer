@@ -1,12 +1,6 @@
 import { useEffect, useState } from "preact/hooks";
-import { store, useStore } from "./store";
+import { store } from "./store";
 import { Assembler, Parser, Tokenizer } from "./Assembler";
-
-const NoiseView = () => {
-  const noise = useStore((s) => s.noise);
-
-  return <div>Noise: {noise}</div>;
-};
 
 export const App = () => {
   const [program, setProgram] = useState("hlt");
@@ -29,6 +23,7 @@ export const App = () => {
         try {
           const asm = new Assembler(parser.nodes, program);
 
+          asm.enableInterrupts = true;
           asm.exec();
 
           const { bin, map } = asm;
@@ -36,6 +31,10 @@ export const App = () => {
           setBinOut(bin);
 
           let preview: string[] = [];
+
+          if (asm.enableInterrupts) {
+            preview.push(`// Interrupts offsets\n`);
+          }
 
           for (let i = 0; i < bin.length; i += 1) {
             while (map[0] && map[0].offset === i) {
@@ -62,7 +61,6 @@ export const App = () => {
   return (
     <main style={{ display: "flex", flexDirection: "column", gap: 20, overflow: "hidden", height: "100vh" }}>
       <h1>Single Key Computer</h1>
-      <NoiseView />
       <div style={{ display: "flex" }}>
         <button
           style={{ flexGrow: 1 }}
@@ -71,8 +69,8 @@ export const App = () => {
         >
           Upload
         </button>
-        <button disabled={!binOut} onClick={() => binOut && store.resetProc().catch(alert)}>
-          Reset Processor
+        <button disabled={!binOut} onClick={() => binOut && store.restartVM().catch(alert)}>
+          Restart Computer
         </button>
       </div>
       <div style={{ display: "flex", flexGrow: 1, overflow: "hidden", gap: 20 }}>

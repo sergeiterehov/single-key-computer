@@ -17,31 +17,17 @@ class Observable {
 }
 
 class Store extends Observable {
-  private _noise: number = -1;
-
   constructor() {
     super();
 
     this._emit();
-
-    this._pingLoop();
   }
 
-  private async _pingLoop() {
-    try {
-      const [byte] = await this.readBus(0x51000, 1);
+  async restartVM() {
+    const res = await fetch("/vm/restart", { method: "POST" });
+    const data = new Uint8Array(await res.arrayBuffer());
 
-      if (byte === undefined) return;
-
-      this._noise = byte;
-      this._emit();
-    } finally {
-      setTimeout(() => this._pingLoop(), 5000);
-    }
-  }
-
-  get noise() {
-    return this._noise;
+    return data;
   }
 
   async resetProc() {
@@ -66,6 +52,13 @@ class Store extends Observable {
       method: "POST",
       body: new Uint8Array([addr & 0xff, (addr >> 8) & 0xff, (addr >> 16) & 0xff, ...bin]),
     });
+    const data = new Uint8Array(await res.arrayBuffer());
+
+    return data;
+  }
+
+  async loadROM() {
+    const res = await fetch("/rom/load", { method: "POST" });
     const data = new Uint8Array(await res.arrayBuffer());
 
     return data;

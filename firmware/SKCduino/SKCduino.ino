@@ -69,12 +69,21 @@ void setup() {
     Serial.println(sizeof(rom), HEX);
   }
 
+  // Reset proc
+  proc.reset();
+
   Serial.println("Initialized!");
 }
 
 void loop() {
   server_loop();
   emulator_loop();
+}
+
+void vm_restart() {
+  proc.reset();
+  video.reset(true);
+  load_rom();
 }
 
 bool load_rom() {
@@ -100,9 +109,7 @@ bool load_rom() {
 }
 
 void emulator_loop() {
-  if (!proc.halt) {
-    proc.clk();
-  }
+  proc.clk();
 
   if (proc.debug) {
     proc.debug = false;
@@ -170,7 +177,16 @@ void server_loop() {
   }
 
   // turns the GPIOs on and off
-  if (header.indexOf("POST /proc/reset ") == 0) {
+  if (header.indexOf("POST /vm/restart ") == 0) {
+    Serial.println("Proc reset");
+
+    vm_restart();
+
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-type: binary/octet-stream");
+    client.println("Connection: close");
+    client.println();
+  } else if (header.indexOf("POST /proc/reset ") == 0) {
     Serial.println("Proc reset");
 
     proc.reset();
@@ -213,6 +229,15 @@ void server_loop() {
     for (int i = 0; i < size; i += 1) {
       client.write(bus.read(addr + i));
     }
+  } else if (header.indexOf("POST /rom/load ") == 0) {
+    Serial.println("ROM load");
+
+    load_rom();
+
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-type: text/html");
+    client.println("Connection: close");
+    client.println();
   } else if (header.indexOf("POST /rom/delete ") == 0) {
     Serial.println("ROM delete");
 
@@ -237,7 +262,7 @@ void server_loop() {
     client.println("Content-type: text/html");
     client.println("Connection: close");
     client.println();
-  } else if (header.indexOf("POST / ") == 0) {
+  } else if (header.indexOf("POST /index.html ") == 0) {
     Serial.println("Write index.html");
 
     File file = LittleFS.open("/index.html", FILE_WRITE);

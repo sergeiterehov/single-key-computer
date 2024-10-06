@@ -62,7 +62,8 @@ void VBus::write(uint32_t addr, uint8_t data) {
 
 void VProc::reset() {
   this->cycles = 0;
-  this->ip = 0;
+  this->int0 = false;
+  this->ip = 0x10;
   this->sp = 0;
   this->debug = false;
   this->halt = false;
@@ -70,8 +71,6 @@ void VProc::reset() {
 
 void VProc::clk() {
   this->cycles += 1;
-
-  uint8_t op = this->bus->read(this->ip);
 
   uint8_t u8;
   uint16_t u16;
@@ -81,6 +80,30 @@ void VProc::clk() {
   uint8_t* p_u16 = (uint8_t*)(&u16);
   uint8_t* p_u32a = (uint8_t*)(&u32a);
   uint8_t* p_u32b = (uint8_t*)(&u32b);
+
+  if (this->halt) {
+    if (this->int0) {
+      this->sp -= 4;
+      this->ip = *(uint32_t*)(this->stack + this->sp);
+    } else {
+      return;
+    }
+  }
+
+  if (this->int0) {
+    *(uint32_t*)(this->stack + this->sp) = this->ip;
+    this->sp += 4;
+
+    p_u16[0] = this->bus->read(0x00);
+    p_u16[1] = this->bus->read(0x01);
+
+    this->ip = u16;
+
+    this->int0 = false;
+    return;
+  }
+
+  uint8_t op = this->bus->read(this->ip);
 
   switch (op) {
     case 0x00:

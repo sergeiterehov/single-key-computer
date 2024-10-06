@@ -41,8 +41,19 @@ public:
 
   void begin() {
     neo.begin();
+
+    this->reset(false);
+  }
+
+  void reset(bool clear_mem) {
     neo.clear();
     neo.show();
+
+    if (clear_mem) {
+      for (int i = 0; i < this->_memsize; i += 1) {
+        this->_mem[0] = 0;
+      }
+    }
   }
 
   void loop() {

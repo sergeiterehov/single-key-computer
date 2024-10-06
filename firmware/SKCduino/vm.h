@@ -55,6 +55,8 @@ public:
   bool halt;
   bool debug;
 
+  bool int0;
+
   uint32_t ip;
   uint32_t sp;
 

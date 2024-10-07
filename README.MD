@@ -1,6 +1,6 @@
 # Single Key Computer
 
-![alt text](hardware/assembled.png)
+![Single Key Computer photo](hardware/assembled.png)
 
 ## Components
 
@@ -9,9 +9,15 @@
 - Kailh Switch
 - 3D-printed body
 
+![Single Key Computer inside](hardware/inside.png)
+
 ## Stack
 
 - Arduino, LittleFS_esp32, Adafruit_NeoPixel
 - WiFi
 - HTTP
 - PReact Web Application
+
+## Web Interface
+
+![Single Key Computer Interface](docs/web-app-screen.png)

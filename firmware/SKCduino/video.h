@@ -3,23 +3,20 @@
 
 #include "vm.h"
 
-#define PIN_LED 16
-#define NUMPIXELS 64
-
 Adafruit_NeoPixel neo(NUMPIXELS, PIN_LED, NEO_GRB + NEO_KHZ800);
 
 struct Pixel24 {
-  uint8_t b;
-  uint8_t g;
   uint8_t r;
+  uint8_t g;
+  uint8_t b;
 };
 
 struct VideoMeta {
   uint8_t mode;
   uint8_t brightness;
-  uint8_t b;
-  uint8_t g;
   uint8_t r;
+  uint8_t g;
+  uint8_t b;
 };
 
 class Video : public VBusDevice {
@@ -51,7 +48,7 @@ public:
 
     if (clear_mem) {
       for (int i = 0; i < this->_memsize; i += 1) {
-        this->_mem[0] = 0;
+        this->_mem[i] = 0;
       }
     }
   }

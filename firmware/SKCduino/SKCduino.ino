@@ -1,3 +1,8 @@
+#define PIN_ZERO_BTN 37
+#define PIN_BTN 39
+#define PIN_LED 16
+#define NUMPIXELS 64
+
 #include <WiFi.h>
 
 #include <FS.h>
@@ -6,6 +11,7 @@
 #include "vm.h"
 #include "rom.h"
 #include "video.h"
+#include "keyboard.h"
 
 const char* ssid = "SingleKeyComputer";
 const char* password = "SuperHardPassword123";
@@ -15,16 +21,23 @@ WiFiServer server(80);
 VMem mem;
 VNoise noise;
 Video video;
+Keyboard keyboard;
 VBus bus;
 VProc proc;
 
 void setup() {
   // Init components
   Serial.begin(115200);
-
-  sleep(1);  // TODO: remove
-
   Serial.println("Single Key Computer!");
+
+  // Keyboard
+  Serial.print("Keyboard...");
+  keyboard.begin();
+  Serial.println(keyboard.state ? "[PRESSED]" : "[OK]");
+
+  if (keyboard.state) {
+    sleep(1);
+  }
 
   // FS
   Serial.print("Mounting FS...");
@@ -56,6 +69,7 @@ void setup() {
   bus.connect(0x00000, 0x07CFF, &mem);
   bus.connect(0x50000, 0x50fff, &video);
   bus.connect(0x51000, 0x51fff, &noise);
+  bus.connect(0x52000, 0x52fff, &keyboard);
   proc.bus = &bus;
   Serial.println("[OK] video@0x50000, noise@0x51000");
 
@@ -109,6 +123,12 @@ bool load_rom() {
 }
 
 void emulator_loop() {
+  bool btn_trans = keyboard.update();
+
+  if (btn_trans) {
+    proc.int0 = true;
+  }
+
   proc.clk();
 
   if (proc.debug) {
@@ -116,16 +136,20 @@ void emulator_loop() {
 
     Serial.print("CYCLES=");
     Serial.print(proc.cycles);
+    if (proc.interruped) {
+      Serial.print(" [INT]");
+    }
     Serial.print(" IP=");
     Serial.print(proc.ip);
-    Serial.print(" SP=");
-    Serial.print(proc.sp);
     Serial.print(" REGs=[");
     for (int i = 0; i < 6; i += 1) {
       Serial.print(proc.reg[i], HEX);
       Serial.print(", ");
     }
-    Serial.print("...] STACK=[");
+    Serial.print("...]");
+    Serial.print(" SP=");
+    Serial.print(proc.sp);
+    Serial.print(" STACK=[");
     for (int i = 0; i < proc.sp && i < 8; i += 1) {
       Serial.print(proc.stack[i], HEX);
       Serial.print(", ");

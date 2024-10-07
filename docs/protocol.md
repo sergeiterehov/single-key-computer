@@ -18,8 +18,13 @@ All methods use **POST**!
 - `0x00000-0x07CFF` - RAM
 - `0x50000-0x50fff` - Video (8x8 @24bit)
 - `0x51000-0x51fff` - Random generator
+- `0x52000-0x52fff` - Keyboard
 
 ## Proc Memory Segmentation
 
 - `0x00-0x0f` - interrupt offsets (8 x 16bit)
 - `0x10` - start execution address
+
+## Interrupts
+
+- `0x0` - keyboard

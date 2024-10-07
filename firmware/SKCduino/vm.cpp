@@ -62,6 +62,7 @@ void VBus::write(uint32_t addr, uint8_t data) {
 
 void VProc::reset() {
   this->cycles = 0;
+  this->interruped = false;
   this->int0 = false;
   this->ip = 0x10;
   this->sp = 0;
@@ -81,25 +82,24 @@ void VProc::clk() {
   uint8_t* p_u32a = (uint8_t*)(&u32a);
   uint8_t* p_u32b = (uint8_t*)(&u32b);
 
-  if (this->halt) {
+  if (!this->interruped) {
     if (this->int0) {
-      this->sp -= 4;
-      this->ip = *(uint32_t*)(this->stack + this->sp);
-    } else {
+      *(uint32_t*)(this->stack + this->sp) = this->ip;
+      this->sp += 4;
+
+      p_u16[0] = this->bus->read(0x00);
+      p_u16[1] = this->bus->read(0x01);
+
+      this->ip = u16;
+      this->interruped = true;
+      this->halt = false;
+
+      this->int0 = false;
       return;
     }
   }
 
-  if (this->int0) {
-    *(uint32_t*)(this->stack + this->sp) = this->ip;
-    this->sp += 4;
-
-    p_u16[0] = this->bus->read(0x00);
-    p_u16[1] = this->bus->read(0x01);
-
-    this->ip = u16;
-
-    this->int0 = false;
+  if (this->halt) {
     return;
   }
 
@@ -108,9 +108,15 @@ void VProc::clk() {
   switch (op) {
     case 0x00:
       // Hlt
-      this->halt = true;
+      if (this->interruped) {
+        this->sp -= 4;
+        this->ip = *(uint32_t*)(this->stack + this->sp);
 
-      this->ip += 1;
+        this->interruped = false;
+        this->halt = false;
+      } else {
+        this->halt = true;
+      }
       break;
     case 0x01:
       // Push_IReg

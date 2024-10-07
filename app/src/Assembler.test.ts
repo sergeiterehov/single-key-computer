@@ -12,9 +12,10 @@ function parse(source: string) {
   return parser.nodes;
 }
 
-function compile(source: string) {
+function compile(source: string, { enableInterrupts = false } = {}) {
   const asm = new Assembler(parse(source), source);
 
+  asm.enableInterrupts = enableInterrupts;
   asm.exec();
 
   return asm.bin;
@@ -109,14 +110,32 @@ describe("Compiler", () => {
     ).toEqual(Uint8Array.from([0x20, 0x00, 0x00, 0x20, 0x03, 0x00]));
   });
 
+  test("Interrupts definition", () => {
+    expect(
+      compile(
+        `
+        #handle 0 start
+        #here start
+        add
+      `,
+        { enableInterrupts: true }
+      )
+    ).toEqual(
+      Uint8Array.from([
+        ...[0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+        0x30,
+      ])
+    );
+  });
+
   test("Map", () => {
     const source = "push i1 push 0xff";
     const asm = new Assembler(parse(source), source);
 
     asm.exec();
 
-    expect([asm.map[0].offset, asm.map[0].length, asm.map[0].node.$map]).toEqual([0, 2, { at: 0, length: 7 }]);
-    expect([asm.map[1].offset, asm.map[1].length, asm.map[1].node.$map]).toEqual([2, 6, { at: 8, length: 9 }]);
+    expect([asm.map[0].offset, asm.map[0].length, asm.map[0].node.$map]).toEqual([16, 2, { at: 0, length: 7 }]);
+    expect([asm.map[1].offset, asm.map[1].length, asm.map[1].node.$map]).toEqual([18, 6, { at: 8, length: 9 }]);
   });
 
   describe("Operations", () => {

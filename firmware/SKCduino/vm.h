@@ -53,6 +53,7 @@ public:
 
   uint32_t cycles;
   bool halt;
+  bool interruped;
   bool debug;
 
   bool int0;

@@ -20,6 +20,7 @@ export const enum EToken {
   KeywordHlt,
   DirectiveName,
   DirectiveHere,
+  DirectiveHandle,
   Coma,
   SquareBracketOpen,
   SquareBracketClose,
@@ -27,6 +28,7 @@ export const enum EToken {
 
 const TokensDefinition: [EToken, RegExp][] = [
   [EToken.Space, /\s+|\/\/[^\n]*/],
+  [EToken.DirectiveHandle, /#handle/],
   [EToken.DirectiveName, /#name/],
   [EToken.DirectiveHere, /#here/],
   [EToken.NumberBin, /0b[01]+/],
@@ -125,6 +127,7 @@ export enum ENode {
   Name,
   DefineName,
   DefineLocation,
+  DefineInterruptHandler,
   Array,
 }
 
@@ -142,8 +145,16 @@ type OpJumpNode = NodeOf<ENode.OpJump, { cond: "*" | "<"; offset: NameNode }>;
 
 type DefineNameNode = NodeOf<ENode.DefineName, { name: string; origin: RegisterNode }>;
 type DefineLocationNode = NodeOf<ENode.DefineLocation, { name: string }>;
+type DefineInterruptHandlerNode = NodeOf<ENode.DefineInterruptHandler, { index: number; offset: NameNode }>;
 
-type NodeRoot = DefineNameNode | DefineLocationNode | OpPushNode | OpPopNode | OpOnStackNode | OpJumpNode;
+type NodeRoot =
+  | DefineNameNode
+  | DefineLocationNode
+  | DefineInterruptHandlerNode
+  | OpPushNode
+  | OpPopNode
+  | OpOnStackNode
+  | OpJumpNode;
 
 export type Node = NodeRoot | NumberNode | RegisterNode | NameNode | ArrayNode;
 
@@ -327,7 +338,7 @@ export class Parser {
   private _parseNameDefinition(): DefineNameNode {
     const $map = this._beginMap();
 
-    this._eat(EToken.DirectiveName);
+    this._eat();
 
     const name = this._parseName();
 
@@ -341,13 +352,26 @@ export class Parser {
   private _parseLocationDefinition(): DefineLocationNode {
     const $map = this._beginMap();
 
-    this._eat(EToken.DirectiveHere);
+    this._eat();
 
     const name = this._parseName();
 
     this._endMap($map);
 
     return { $map, eNode: ENode.DefineLocation, name: name.value };
+  }
+
+  private _parseInterruptHandlerDefinition(): DefineInterruptHandlerNode {
+    const $map = this._beginMap();
+
+    this._eat();
+
+    const index = this._parseNumber();
+    const offset = this._parseName();
+
+    this._endMap($map);
+
+    return { $map, eNode: ENode.DefineInterruptHandler, index: index.value, offset };
   }
 
   private _parse(): NodeRoot[] {
@@ -390,6 +414,9 @@ export class Parser {
           break;
         case EToken.DirectiveHere:
           nodes.push(this._parseLocationDefinition());
+          break;
+        case EToken.DirectiveHandle:
+          nodes.push(this._parseInterruptHandlerDefinition());
           break;
         default:
           throw new Error(this._explain("OPERATION_EXPECTED"));
@@ -452,7 +479,7 @@ export class Assembler {
   bin: Uint8Array = Uint8Array.from([]);
   map: { offset: number; length: number; node: Node }[] = [];
 
-  enableInterrupts = false;
+  enableInterrupts = true;
 
   constructor(private _nodes: NodeRoot[], private _source: string) {}
 
@@ -470,13 +497,43 @@ export class Assembler {
   }
 
   exec() {
+    const numInterrupts = 8;
+
     const bin: number[] = [];
-    const locationsMap = new Map<string, { location: number; offsets: { rewrite: number; relative: number }[] }>();
+    const locationsMap = new Map<string, { location: number; offsets: { writeTo: number; relative: number }[] }>();
     const namesMap = new Map<string, DefineNameNode>();
 
+    this.map = [];
+
     if (this.enableInterrupts) {
-      bin.push(...new Array(16).fill(0));
+      bin.push(...new Array(numInterrupts * 2).fill(0));
     }
+
+    const requireLocation = (name: NameNode) => {
+      const location = locationsMap.get(name.value);
+
+      if (!location) {
+        throw new Error(this._explain("UNDEFINED_LOCATION", name));
+      }
+
+      return location;
+    };
+
+    const requireRegister = (node: Node) => {
+      switch (node.eNode) {
+        case ENode.Register:
+          return node;
+        case ENode.Name:
+          const definition = namesMap.get(node.value);
+
+          if (definition) {
+            return definition.origin;
+          }
+          break;
+      }
+
+      throw new Error(this._explain("REGISTER_REQUIRED", node));
+    };
 
     for (const node of this._nodes) {
       switch (node.eNode) {
@@ -503,24 +560,6 @@ export class Assembler {
       }
     }
 
-    this.map = [];
-
-    const requireRegister = (node: Node) => {
-      switch (node.eNode) {
-        case ENode.Register:
-          return node;
-        case ENode.Name:
-          const definition = namesMap.get(node.value);
-
-          if (definition) {
-            return definition.origin;
-          }
-          break;
-      }
-
-      throw new Error(this._explain("REGISTER_REQUIRED", node));
-    };
-
     nodes_loop: for (const node of this._nodes) {
       const map: (typeof this.map)[0] = { node, offset: bin.length, length: 0 };
 
@@ -529,11 +568,24 @@ export class Assembler {
           break;
 
         case ENode.DefineLocation: {
-          const location = locationsMap.get(node.name);
-
-          if (location === undefined) throw new Error(this._explain("UNDEFINED_LOCATION", node));
+          const location = locationsMap.get(node.name)!;
 
           location.location = bin.length;
+          break;
+        }
+
+        case ENode.DefineInterruptHandler: {
+          if (!this.enableInterrupts) {
+            throw new Error(this._explain("INTERRUPTS_DISABLED", node));
+          }
+
+          if (node.index >= numInterrupts) {
+            throw new Error(this._explain("INTERRUPT_OUT_OF_RANGE", node));
+          }
+
+          const location = requireLocation(node.offset);
+
+          location.offsets.push({ relative: 0, writeTo: node.index * 2 });
           break;
         }
 
@@ -597,17 +649,15 @@ export class Assembler {
         }
 
         case ENode.OpJump: {
-          const location = locationsMap.get(node.offset.value);
+          const location = requireLocation(node.offset);
 
-          if (location === undefined) throw new Error(this._explain("UNDEFINED_LOCATION", node.offset));
+          location.offsets.push({ relative: bin.length, writeTo: 1 });
 
           switch (node.cond) {
             case "*":
-              location.offsets.push({ relative: bin.length, rewrite: 1 });
               bin.push(...Ops.Jmp_Offset.build(0));
               break;
             case "<":
-              location.offsets.push({ relative: bin.length, rewrite: 1 });
               bin.push(...Ops.Jl_Offset.build(0));
               break;
           }
@@ -625,11 +675,11 @@ export class Assembler {
 
     for (const [, location] of locationsMap.entries()) {
       for (const pointer of location.offsets) {
-        const offsetRewrite = pointer.relative + pointer.rewrite;
+        const writeOffset = pointer.relative + pointer.writeTo;
         const binOffset = to16(location.location - pointer.relative);
 
-        bin[offsetRewrite] = binOffset[0];
-        bin[offsetRewrite + 1] = binOffset[1];
+        bin[writeOffset] = binOffset[0];
+        bin[writeOffset + 1] = binOffset[1];
       }
     }
 

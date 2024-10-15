@@ -1,6 +1,8 @@
 import { useEffect, useState } from "preact/hooks";
 import { store } from "./store";
-import { Assembler, Parser, Tokenizer } from "./Assembler";
+import { Assembler } from "./asm/Assembler";
+import { Parser } from "./asm/Parser";
+import { Tokenizer } from "./asm/Tokenizer";
 
 export const App = () => {
   const [program, setProgram] = useState("hlt");
@@ -23,18 +25,13 @@ export const App = () => {
         try {
           const asm = new Assembler(parser.nodes, program);
 
-          asm.enableInterrupts = true;
           asm.exec();
 
-          const { bin, map } = asm;
+          const { bin, map, offset } = asm;
 
-          setBinOut(bin);
+          setBinOut(Uint8Array.from([...new Uint8Array(offset), ...bin]));
 
           let preview: string[] = [];
-
-          if (asm.enableInterrupts) {
-            preview.push(`// Interrupts offsets\n`);
-          }
 
           for (let i = 0; i < bin.length; i += 1) {
             while (map[0] && map[0].offset === i) {
@@ -67,7 +64,7 @@ export const App = () => {
           disabled={!binOut}
           onClick={() => binOut && store.writeROM(binOut).catch(alert)}
         >
-          Upload
+          {binOut ? `Upload ${binOut.length}B` : "Nothing to upload"}
         </button>
         <button disabled={!binOut} onClick={() => binOut && store.restartVM().catch(alert)}>
           Restart Computer

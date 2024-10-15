@@ -16,8 +16,8 @@ All methods use **POST**!
 ## Memory mapping
 
 - `0x00000-0x07CFF` - RAM
-    * `0x00000` - Interrupt vectors 8 @16bit
-    * `0x00010` - Initial Instruction Pointer
+    * `0x00000` - Interrupt vectors 8 @32bit
+    * `0x00100` - Initial Instruction Pointer
     * `0x07000` - Initial Stack Pinter
 - `0x50000-0x50fff` - Video (8x8 @24bit)
 - `0x51000-0x51fff` - Random generator (any read is random)
@@ -29,20 +29,38 @@ All methods use **POST**!
 - `0` - keyboard
 - `1` - timer
 
+## Directives
+
+- `#offset [address]` set global program offset in memory
+- `#name [alias] [register]`
+- `#here [label]`
+
 ## Instructions set
 
-- `Hlt`
+- `HLT`
 - `Push_IReg`
 - `Pop_IReg`
 - `Push_Size8_Array`
 - `Pop_Size8`
-- `Read`
-- `Write`
-- `Jmp_Offset16`
-- `Jl_Offset16`
-- `Add`
-- `Mul`
-- `Debug`
+- `READ`
+- `WRITE`
+- `JMP_Address32` unconditional jump
+- `JIF_Address32` pop 1 byte, jump if != 8x0
+- `JELSE_Address32` pop 1 byte, jump if == 8x0
+- `ENABLE_Index8` enable irq
+- `DISABLE_Index8` disable irq
+- `ADD`
+- `SUB` b32, a32 -> a32 - b32
+- `MUL`
+- `DIV` b32, a32 -> a32 / b32
+- `MOD` b32, a32 -> a32 % b32
+- `AND` b8, a8 -> a8 & b8
+- `OR` b8, a8 -> a8 | b8
+- `NOT` a8 -> ^a8
+- `EQ` b32, a32 -> {8x1: a32 = b32, 8x0: default}
+- `GT` b32, a32 -> {8x1: a32 > b32, 8x0: default}
+- `LT` b32, a32 -> {8x1: a32 < b32, 8x0: default}
+- `DEBUG`
 
 ### TODO: register mapping
 
@@ -54,33 +72,6 @@ All methods use **POST**!
 - `_26` - RESERVED
 - `_25` - RESERVED
 - `_24` - RESERVED
-
-### TODO: new IRQ set
-
-- `enable_Irq8` enable irq
-- `disable_Irq8` disable irq
-
-### TODO: new jump set
-
-- `Jmp_Offset16` unconditional jump
-- `Jif_Offset16` pop 1 byte, jump if != 8x0
-- `Jelse_Offset16` pop 1 byte, jump if == 8x0
-
-### TODO: new boolean operations
-
-- `And` b8, a8 -> a8 & b8
-- `Or` b8, a8 -> a8 | b8
-- `Not` a8 -> ^a8
-
-- `Gt` b32, a32 -> {8x1: a32 > b32, 8x0: default}
-- `Lt` b32, a32 -> {8x1: a32 < b32, 8x0: default}
-- `Eq` b32, a32 -> {8x1: a32 = b32, 8x0: default}
-
-### TODO: new math
-
-- `Sub` b32, a32 -> a32 - b32
-- `Div` b32, a32 -> a32 / b32
-- `Mod` b32, a32 -> a32 % b32
 
 ### How to compare
 

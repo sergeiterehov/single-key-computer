@@ -47,26 +47,24 @@ All methods use **POST**!
 - `JMP_Address32` unconditional jump
 - `JIF_Address32` pop 1 byte, jump if != 8x0
 - `JELSE_Address32` pop 1 byte, jump if == 8x0
-- `ENABLE_Index8` enable irq
-- `DISABLE_Index8` disable irq
-- `ADD`
+- `ADD` b32, a32 -> a32 + b32
 - `SUB` b32, a32 -> a32 - b32
-- `MUL`
+- `MUL` b32, a32 -> a32 * b32
 - `DIV` b32, a32 -> a32 / b32
 - `MOD` b32, a32 -> a32 % b32
-- `AND` b8, a8 -> a8 & b8
-- `OR` b8, a8 -> a8 | b8
-- `NOT` a8 -> ^a8
 - `EQ` b32, a32 -> {8x1: a32 = b32, 8x0: default}
 - `GT` b32, a32 -> {8x1: a32 > b32, 8x0: default}
 - `LT` b32, a32 -> {8x1: a32 < b32, 8x0: default}
+- `AND` b8, a8 -> a8 & b8
+- `OR` b8, a8 -> a8 | b8
+- `NOT` a8 -> ^a8
 - `DEBUG`
 
 ### TODO: register mapping
 
 - `_31` - Instruction Pointer
 - `_30` - Stack Pointer
-- `_29` - RESERVED
+- `_29` - Enabled Interrupts
 - `_28` - RESERVED
 - `_27` - RESERVED
 - `_26` - RESERVED

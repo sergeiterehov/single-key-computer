@@ -201,11 +201,5 @@ describe("Compiler", () => {
     test("LT", () => {
       expect(compile("lt")).toEqual(Uint8Array.from([0x3a]));
     });
-    test("DISABLE_Index8", () => {
-      expect(compile("disable 1")).toEqual(Uint8Array.from([0xf0, 0x01]));
-    });
-    test("ENABLE_Index8", () => {
-      expect(compile("enable 2")).toEqual(Uint8Array.from([0xf1, 0x02]));
-    });
   });
 });

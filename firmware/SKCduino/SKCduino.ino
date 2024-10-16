@@ -136,7 +136,7 @@ void emulator_loop() {
 
     Serial.print("CYCLES=");
     Serial.print(proc.cycles);
-    if (proc.interruped) {
+    if (proc.interrupted) {
       Serial.print(" [INT]");
     }
     Serial.print(" IP=");

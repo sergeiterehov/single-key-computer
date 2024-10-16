@@ -9,7 +9,6 @@ export enum ENode {
   OpMem,
   OpControl,
   OpJump,
-  OpInterruptControl,
   Number,
   Register,
   Name,
@@ -38,7 +37,6 @@ export type Nodes = {
   [ENode.OpMem]: NodeOf<ENode.OpMem, { op: "R" | "W" }>;
   [ENode.OpControl]: NodeOf<ENode.OpControl, { op: "DEBUG" | "HALT" }>;
   [ENode.OpJump]: NodeOf<ENode.OpJump, { cond: "none" | "if" | "else"; addr: NameNode }>;
-  [ENode.OpInterruptControl]: NodeOf<ENode.OpInterruptControl, { enabled: boolean; index: number }>;
 
   [ENode.DefineOffset]: NodeOf<ENode.DefineOffset, { offset: number }>;
   [ENode.DefineName]: NodeOf<ENode.DefineName, { name: string; origin: RegisterNode }>;
@@ -54,7 +52,6 @@ export type NodeRoot =
   | Nodes[ENode.OpMem]
   | Nodes[ENode.OpControl]
   | Nodes[ENode.OpJump]
-  | Nodes[ENode.OpInterruptControl]
   | Nodes[ENode.DefineOffset]
   | Nodes[ENode.DefineName]
   | Nodes[ENode.DefineLocation];
@@ -335,31 +332,6 @@ export class Parser {
     return { $map, eNode: ENode.OpJump, cond: condition, addr };
   }
 
-  private _parseInterruptControlOperation(): Nodes[ENode.OpInterruptControl] {
-    const $map = this._beginMap();
-
-    const opToken = this._eat();
-
-    let enabled: Nodes[ENode.OpInterruptControl]["enabled"];
-
-    switch (opToken.eToken) {
-      default:
-        throw new Error(this._explain("EXPECTED_INT_CONTROL"));
-      case EToken.KeywordENABLE:
-        enabled = true;
-        break;
-      case EToken.KeywordDISABLE:
-        enabled = false;
-        break;
-    }
-
-    const index = this._parseNumber();
-
-    this._endMap($map);
-
-    return { $map, eNode: ENode.OpInterruptControl, enabled, index: index.value };
-  }
-
   private _parseOffsetDefinition(): Nodes[ENode.DefineOffset] {
     const $map = this._beginMap();
 
@@ -436,10 +408,6 @@ export class Parser {
         case EToken.KeywordDEBUG:
         case EToken.KeywordHLT:
           nodes.push(this._parseControlOperation());
-          break;
-        case EToken.KeywordENABLE:
-        case EToken.KeywordDISABLE:
-          nodes.push(this._parseInterruptControlOperation());
           break;
         case EToken.DirectiveOffset:
           nodes.push(this._parseOffsetDefinition());

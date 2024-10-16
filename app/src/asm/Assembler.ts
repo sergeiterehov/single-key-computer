@@ -22,10 +22,10 @@ class OpCoder<P extends any[]> {
 export const Ops = {
   HLT: OpCoder.from(0x00),
 
-  Push_IReg: OpCoder.from(0x01, (i: number) => [to8(i)]),
-  Pop_IReg: OpCoder.from(0x02, (i: number) => [to8(i)]),
-  Push_Size_Array: OpCoder.from(0x03, (s: number, a: number[]) => [to8(s), ...a.map(to8)]),
-  Pop_Size: OpCoder.from(0x04, (s: number) => [to8(s)]),
+  PUSH_Reg8: OpCoder.from(0x01, (i: number) => [to8(i)]),
+  POP_Reg8: OpCoder.from(0x02, (i: number) => [to8(i)]),
+  PUSH_Size8_Array: OpCoder.from(0x03, (s: number, a: number[]) => [to8(s), ...a.map(to8)]),
+  POP_Size8: OpCoder.from(0x04, (s: number) => [to8(s)]),
 
   READ: OpCoder.from(0x10),
   WRITE: OpCoder.from(0x11),
@@ -45,9 +45,6 @@ export const Ops = {
   EQ: OpCoder.from(0x38),
   GT: OpCoder.from(0x39),
   LT: OpCoder.from(0x3a),
-
-  DISABLE_Index8: OpCoder.from(0xf0, (i: number) => [to8(i)]),
-  ENABLE_Index8: OpCoder.from(0xf1, (i: number) => [to8(i)]),
 
   DEBUG: OpCoder.from(0xff),
 };
@@ -163,14 +160,14 @@ export class Assembler {
         case ENode.OpPush: {
           switch (node.source.eNode) {
             default:
-              bin.push(...Ops.Push_IReg.build(requireRegister(node.source).index));
+              bin.push(...Ops.PUSH_Reg8.build(requireRegister(node.source).index));
               break;
             case ENode.Number:
-              bin.push(...Ops.Push_Size_Array.build(4, to32(node.source.value)));
+              bin.push(...Ops.PUSH_Size8_Array.build(4, to32(node.source.value)));
               break;
             case ENode.Array:
               bin.push(
-                ...Ops.Push_Size_Array.build(
+                ...Ops.PUSH_Size8_Array.build(
                   node.source.values.length,
                   node.source.values.map((n) => n.value)
                 )
@@ -184,10 +181,10 @@ export class Assembler {
         case ENode.OpPop: {
           switch (node.target.eNode) {
             default:
-              bin.push(...Ops.Pop_IReg.build(requireRegister(node.target).index));
+              bin.push(...Ops.POP_Reg8.build(requireRegister(node.target).index));
               break;
             case ENode.Number:
-              bin.push(...Ops.Pop_Size.build(node.target.value));
+              bin.push(...Ops.POP_Size8.build(node.target.value));
               break;
           }
 
@@ -275,16 +272,6 @@ export class Assembler {
             case "else":
               bin.push(...Ops.JELSE_Address32.build(0));
               break;
-          }
-
-          break;
-        }
-
-        case ENode.OpInterruptControl: {
-          if (node.enabled) {
-            bin.push(...Ops.ENABLE_Index8.build(node.index));
-          } else {
-            bin.push(...Ops.DISABLE_Index8.build(node.index));
           }
 
           break;

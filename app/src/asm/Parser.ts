@@ -1,7 +1,7 @@
 import { EToken, Token } from "./Tokenizer";
 import { Mapping } from "./utils";
 
-export enum ENode {
+export const enum ENode {
   OpPush,
   OpPushArray,
   OpPop,

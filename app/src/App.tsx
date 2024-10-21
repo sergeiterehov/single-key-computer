@@ -5,7 +5,7 @@ import { Parser } from "./asm/Parser";
 import { Tokenizer } from "./asm/Tokenizer";
 
 export const App = () => {
-  const [program, setProgram] = useState("hlt");
+  const [program, setProgram] = useState("#offset 0x100\n\nhlt");
   const [out, setOut] = useState("");
   const [binOut, setBinOut] = useState<Uint8Array>();
 
@@ -37,7 +37,7 @@ export const App = () => {
             while (map[0] && map[0].offset === i) {
               const { at, length } = map.shift()!.node.$map;
 
-              preview.push(`\n// ${i}: ${program.substring(at, at + length)}\n`);
+              preview.push(`\n// 0x${(i + offset).toString(16)}: ${program.substring(at, at + length)}\n`);
             }
 
             preview.push(`0x${bin[i].toString(16)}, `);
@@ -56,23 +56,26 @@ export const App = () => {
   }, [program]);
 
   return (
-    <main style={{ display: "flex", flexDirection: "column", gap: 20, overflow: "hidden", height: "100vh" }}>
-      <h1>Single Key Computer</h1>
-      <div style={{ display: "flex" }}>
-        <button
-          style={{ flexGrow: 1 }}
-          disabled={!binOut}
-          onClick={() => binOut && store.writeROM(binOut).catch(alert)}
-        >
-          {binOut ? `Upload ${binOut.length}B` : "Nothing to upload"}
-        </button>
-        <button disabled={!binOut} onClick={() => binOut && store.restartVM().catch(alert)}>
-          Restart Computer
-        </button>
-      </div>
-      <div style={{ display: "flex", flexGrow: 1, overflow: "hidden", gap: 20 }}>
-        <textarea cols={80} value={program} onChange={(e) => setProgram(e.currentTarget.value)}></textarea>
-        <textarea readOnly style={{ flexGrow: 1, overflowY: "auto" }} value={out}></textarea>
+    <main
+      style={{ display: "flex", flexDirection: "column", overflow: "hidden", height: "100vh", fontFamily: "monospace" }}
+    >
+      <div style={{ display: "flex", flexDirection: "column", padding: 20, gap: 20, overflow: "hidden", flexGrow: 1 }}>
+        <div style={{ display: "flex", gap: 10 }}>
+          <h1 style={{ flexGrow: 1, margin: 0, padding: 0 }}>Single Key Computer</h1>
+          <button disabled={!binOut} onClick={() => binOut && store.writeROM(binOut).catch(alert)}>
+            {binOut ? `Upload ${binOut.length}B` : "Nothing to upload"}
+          </button>
+          <button disabled={!binOut} onClick={() => binOut && store.restartVM().catch(alert)}>
+            Reset VM
+          </button>
+        </div>
+        <div style={{ display: "flex", flexGrow: 1, overflow: "hidden", gap: 20 }}>
+          <textarea cols={80} value={program} onChange={(e) => setProgram(e.currentTarget.value)}></textarea>
+          <textarea readOnly style={{ flexGrow: 1, overflowY: "auto" }} value={out}></textarea>
+        </div>
+        <div style={{ textAlign: "center" }}>
+          <small>&copy; Sergei Terehov, 2024</small>
+        </div>
       </div>
     </main>
   );

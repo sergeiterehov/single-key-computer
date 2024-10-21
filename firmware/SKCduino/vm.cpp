@@ -94,7 +94,7 @@ void VProc::stack_push(uint8_t size, void *from_p) {
 }
 
 void VProc::stack_pop(uint8_t size, void *to_p) {
-  for (int i = 0; i < size; i++) {
+  for (int i = size - 1; i >= 0; i--) {
     ((uint8_t*)(to_p))[i] = this->bus->read(--this->reg[REG_SP]);
   }
 }
@@ -169,6 +169,8 @@ void VProc::clk() {
         this->halt = false;
       } else {
         this->halt = true;
+
+        *ip += 1;
       }
       break;
     case OP_PUSH_Reg8:
@@ -191,8 +193,8 @@ void VProc::clk() {
       u8a = this->bus->read(*ip + 1);
 
       for (int i = 0; i < u8a; i += 1) {
-        u8a = this->bus->read(*ip + 2 + i);
-        this->stack_push(1, &u8a);
+        u8b = this->bus->read(*ip + 2 + i);
+        this->stack_push(1, &u8b);
       }
 
       *ip += 2 + u8a;
@@ -207,8 +209,8 @@ void VProc::clk() {
       this->stack_pop(4, &u32a); // addr
 
       for (int i = 0; i < u8a; i += 1) {
-        u8a = this->bus->read(u32a + i);
-        this->stack_push(1, &u8a);
+        u8b = this->bus->read(u32a + i);
+        this->stack_push(1, &u8b);
       }
 
       *ip += 1;
@@ -218,9 +220,9 @@ void VProc::clk() {
       this->stack_pop(4, &u32a); // addr
 
       // data
-      for (int i = 0; i < u8a; i += 1) {
-        this->stack_pop(1, &u8a);
-        this->bus->write(u32a + i, u8a);
+      for (int i = u8a - 1; i >= 0; i -= 1) {
+        this->stack_pop(1, &u8b);
+        this->bus->write(u32a + i, u8b);
       }
 
       *ip += 1;
@@ -235,7 +237,7 @@ void VProc::clk() {
       } else {
         this->stack_pop(1, &u8a);
 
-        if (op == OP_JELSE_Address32 && u8a != 0 || op == OP_JELSE_Address32 && u8a == 0) {
+        if (op == OP_JIF_Address32 && u8a != 0 || op == OP_JELSE_Address32 && u8a == 0) {
           *ip = u32a;
         } else {
           *ip += 5;
@@ -297,8 +299,8 @@ void VProc::clk() {
       break;
     case OP_AND:
     case OP_OR:
-      this->stack_pop(4, &u8b);
-      this->stack_pop(4, &u8a);
+      this->stack_pop(1, &u8b);
+      this->stack_pop(1, &u8a);
 
       switch (op) {
         case OP_AND:
@@ -314,7 +316,7 @@ void VProc::clk() {
       *ip += 1;
       break;
     case OP_NOT:
-      this->stack_pop(4, &u8a);
+      this->stack_pop(1, &u8a);
 
       u8a = ~u8a;
       this->stack_push(1, &u8a);

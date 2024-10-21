@@ -9,7 +9,6 @@
 #include <LittleFS.h>
 
 #include "vm.h"
-#include "rom.h"
 #include "video.h"
 #include "keyboard.h"
 
@@ -47,17 +46,19 @@ void setup() {
     Serial.println("[OK]");
   }
 
-  // AP
-  Serial.print("Creating AP...");
-  WiFi.softAP(ssid, password);
-  Serial.print("[OK] IP=");
-  IPAddress IP = WiFi.softAPIP();
-  Serial.println(IP);
+  if (keyboard.state) {
+    // AP
+    Serial.print("Creating AP...");
+    WiFi.softAP(ssid, password);
+    Serial.print("[OK] IP=");
+    IPAddress IP = WiFi.softAPIP();
+    Serial.println(IP);
 
-  // Server
-  Serial.print("Starting server...");
-  server.begin();
-  Serial.println("[OK] port=80");
+    // Server
+    Serial.print("Starting server...");
+    server.begin();
+    Serial.println("[OK] port=80");
+  }
 
   // Video
   Serial.print("Starting video...");
@@ -71,17 +72,10 @@ void setup() {
   bus.connect(0x51000, 0x51fff, &noise);
   bus.connect(0x52000, 0x52fff, &keyboard);
   proc.bus = &bus;
-  Serial.println("[OK] video@0x50000, noise@0x51000");
+  Serial.println("[OK] video@0x50000, noise@0x51000, keyboad@0x52000");
 
   // Loading program
-  if (!load_rom()) {
-    Serial.print("Loading TEST program...");
-    for (int i = 0; i < sizeof(rom); i += 1) {
-      mem.write(i, rom[i]);
-    }
-    Serial.print("[OK] size=0x");
-    Serial.println(sizeof(rom), HEX);
-  }
+  load_rom();
 
   // Reset proc
   proc.reset();
@@ -126,7 +120,7 @@ void emulator_loop() {
   bool btn_trans = keyboard.update();
 
   if (btn_trans) {
-    proc.int0 = true;
+    proc.interrupts |= 1 << 0;
   }
 
   proc.clk();
@@ -140,7 +134,7 @@ void emulator_loop() {
       Serial.print(" [INT]");
     }
     Serial.print(" IP=");
-    Serial.print(proc.ip);
+    Serial.print(proc.reg[REG_IP], HEX);
     Serial.print(" REGs=[");
     for (int i = 0; i < 6; i += 1) {
       Serial.print(proc.reg[i], HEX);
@@ -148,13 +142,8 @@ void emulator_loop() {
     }
     Serial.print("...]");
     Serial.print(" SP=");
-    Serial.print(proc.sp);
-    Serial.print(" STACK=[");
-    for (int i = 0; i < proc.sp && i < 8; i += 1) {
-      Serial.print(proc.stack[i], HEX);
-      Serial.print(", ");
-    }
-    Serial.println("...]");
+    Serial.print(proc.reg[REG_SP], HEX);
+    Serial.println();
   }
 
   video.loop();

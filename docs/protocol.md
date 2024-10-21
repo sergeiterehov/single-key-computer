@@ -24,11 +24,6 @@ All methods use **POST**!
 - `0x52000-0x52fff` - Keyboard (state @8bit = 0/1, ...)
 - `0x53000-0x53fff` - Timers x8 {is_fired: @8bit, millis_counter: @32bit}
 
-## Interrupts
-
-- `0` - keyboard
-- `1` - timer
-
 ## Directives
 
 - `#offset [address]` set global program offset in memory
@@ -42,8 +37,8 @@ All methods use **POST**!
 - `Pop_IReg`
 - `Push_Size8_Array`
 - `Pop_Size8`
-- `READ`
-- `WRITE`
+- `READ` address32, size8 -> array
+- `WRITE` array, address32, size8 ->
 - `JMP_Address32` unconditional jump
 - `JIF_Address32` pop 1 byte, jump if != 8x0
 - `JELSE_Address32` pop 1 byte, jump if == 8x0
@@ -60,7 +55,7 @@ All methods use **POST**!
 - `NOT` a8 -> ^a8
 - `DEBUG`
 
-### TODO: register mapping
+### Registers mapping
 
 - `_31` - Instruction Pointer
 - `_30` - Stack Pointer
@@ -71,7 +66,27 @@ All methods use **POST**!
 - `_25` - RESERVED
 - `_24` - RESERVED
 
-### How to compare
+## Interrupts
+
+Register `_29` is associated with interruption controller. It enables an interrupt by bit-mask.
+
+- `0` - keyboard
+- `1` - TODO: timer
+
+### How to enable interrupt
+
+```
+push _29 // EI
+push 0b01 // first bit - zero interrupt
+or
+pop _29
+
+// TODO: how to write handler address to 0x0
+
+#here handler
+```
+
+## How to compare
 
 ```
 // if a < x && x <= b {
@@ -90,7 +105,7 @@ jelse ELSE_1
 // }
 ```
 
-### How to call function
+## How to call function
 
 ```
 // int f(int a, int b) { return a + b }

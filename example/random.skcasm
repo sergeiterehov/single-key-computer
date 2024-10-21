@@ -1,0 +1,29 @@
+#offset 0x100
+
+push 0
+pop _1
+
+#here loop
+push _1
+push 64
+lt
+jelse end
+
+push 0x51000 push [1] read push [0x1F] and
+push 0x51000 push [1] read push [0x1F] and
+push 0x51000 push [1] read push [0x1F] and
+
+push _1 push 3 mul push 0x50000 add
+push [3] write
+
+push _1
+push 1
+add
+pop _1
+
+jmp loop
+#here end
+
+debug
+
+hlt
